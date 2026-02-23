@@ -94,7 +94,7 @@
 		hover:cursor-pointer
 		${window.theme('hover')}
 		${$__displayType === 1 ? 'text-center flex flex-col' : 'inline-flex flex-col'}
-		${selectableDisplays[$__displayType].layout === 'wbw' ? 'p-3' : [2, 3].includes($__fontType) ? ($__currentPage === 'mushaf' ? 'p-0' : 'px-0 py-1') : 'p-1'}
+		${selectableDisplays[$__displayType].layout === 'wbw' ? 'px-3 py-2' : [2, 3].includes($__fontType) ? ($__currentPage === 'mushaf' ? 'p-0' : 'px-0 py-2') : 'px-1 py-2'}
 		${exampleVerse && '!p-0'}
 	`;
 
@@ -162,6 +162,8 @@
 	function getWordKey(wordIndex) {
 		return `${chapter}:${verse}:${wordIndex + 1}`;
 	}
+
+	let hoveredWordKey = null;
 
 	let rootDataMap = {};
 	let sameRootMap = {};
@@ -231,7 +233,7 @@
 
 			if (counts) {
 				const countsLabel = document.createElement('span');
-				countsLabel.textContent = `${counts.exactCount} / ${counts.rootCount}`;
+				countsLabel.textContent = `${counts.rootCount} / ${counts.exactCount}`;
 				countsLabel.style.cssText = 'font-size:12.5px;color:#555;font-family:sans-serif;';
 				wordClone.appendChild(countsLabel);
 			}
@@ -283,17 +285,20 @@
 		<div
 			id={wordKey}
 			class={`
-				word group relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
+				word relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
 				${$__audioSettings.playingWordKey === wordKey || ($__currentPage === 'morphology' && $__morphologyKey === wordKey) || ($__morphologyModalVisible && $__morphologyKey === wordKey) ? window.theme('bgSecondaryDark') : ''}
 				${$__currentPage === 'supplications' && word + 1 < (supplicationsFromQuran[key] || 0) ? ($__hideNonDuaPart ? 'hidden' : 'opacity-30') : ''}
 			`.trim()}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
+		on:mouseenter={() => { hoveredWordKey = wordKey; }}
+		on:mouseleave={() => { hoveredWordKey = null; }}
 		>
 			{#if $__wordTooltip > 1}
 				<!-- svelte-ignore a11y-click-events-have-key-events -->
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<span
-					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none opacity-0 group-hover:opacity-100 border z-10 hidden md:block"
+					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none border z-10 hidden md:block transition-opacity bg-[#FA8072]"
+					style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
 					on:click|stopPropagation={() => screenshotWord(wordKey)}
 					title="Screenshot page"
 				>📷</span>
@@ -328,7 +333,7 @@
 
 		<!-- word tooltip -->
 		{#if $__wordTooltip > 1}
-			<Tooltip arrow={false} type="light" class="z-[19] hidden md:block text-center inline-flex font-sans font-normal ring-1 ring-black">
+			<Tooltip arrow={false} type="light" class="z-[19] hidden md:block text-center inline-flex font-sans font-normal ring-1 ring-black bg-[#7FFFD4]">
 				<div class="flex flex-col items-center gap-1">
 					{#if $__wordTooltip === 2 || $__wordTooltip === 4}
 						<span>{@html transliterationWords[word]}</span>
@@ -337,7 +342,7 @@
 						<span class="text-xl font-bold" style="font-family: serif; direction: rtl;">{formatRoot(wordKey)}</span>
 					{/if}
 					{#if getWordCounts(wordKey)}
-						<span class="text-xs opacity-70">{getWordCounts(wordKey).exactCount} / {getWordCounts(wordKey).rootCount}</span>
+						<span class="text-xs opacity-70">{getWordCounts(wordKey).rootCount} / {getWordCounts(wordKey).exactCount}</span>
 					{/if}
 				</div>
 			</Tooltip>
