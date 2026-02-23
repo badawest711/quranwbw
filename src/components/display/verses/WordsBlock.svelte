@@ -265,13 +265,12 @@
 
 		const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
 		const dataUrl = canvas.toDataURL('image/png');
-		const res = await fetch('/api/save-screenshot', {
+		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ filename, dataUrl })
 		});
-		const { path } = await res.json();
-		console.warn(`[Screenshot] Saved to: ${path}`);
+		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 	}
 </script>
 
