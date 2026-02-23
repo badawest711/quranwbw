@@ -7,6 +7,7 @@
 	import VerseOptionsDropdown from '$display/verses/VerseOptionsDropdown.svelte';
 	import Tooltip from '$ui/FlowbiteSvelte/tooltip/Tooltip.svelte';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations } from '$data/options';
 	import { supplicationsFromQuran } from '$data/quranMeta';
 	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled } from '$utils/stores';
@@ -14,6 +15,8 @@
 	import { wordAudioController } from '$utils/audioController';
 	import { updateSettings } from '$utils/updateSettings';
 	import { getMushafWordFontLink, isFirefoxDarkNonTajweed, isFirefoxDarkTajweed } from '$utils/getMushafWordFontLink';
+	import { fetchAndCacheJson } from '$utils/fetchData';
+	import { morphologyDataUrls } from '$data/websiteSettings';
 
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
@@ -159,6 +162,117 @@
 	function getWordKey(wordIndex) {
 		return `${chapter}:${verse}:${wordIndex + 1}`;
 	}
+
+	let rootDataMap = {};
+	let sameRootMap = {};
+	let exactWordsMap = {};
+
+	onMount(async () => {
+		const [rootRes, sameRootRes, exactRes] = await Promise.all([
+			fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology'),
+			fetchAndCacheJson(morphologyDataUrls.wordsWithSameRootKeys, 'morphology'),
+			fetchAndCacheJson(morphologyDataUrls.exactWordsKeys, 'morphology')
+		]);
+		rootDataMap = rootRes?.data ?? {};
+		sameRootMap = sameRootRes?.data ?? {};
+		exactWordsMap = exactRes?.data ?? {};
+	});
+
+	function formatRoot(wordKey) {
+		const root = rootDataMap[wordKey]?.[1];
+		if (!root) return null;
+		return Array.from(root).join(' · ');
+	}
+
+	const pauseMarksRegex = /[ۖۗۘۙۚۛۜ۩۞]/g;
+
+	function getWordCounts(wordKey) {
+		const meta = rootDataMap[wordKey];
+		if (!Array.isArray(meta)) return null;
+		const root = meta[1];
+		const uthmani = meta[0]?.replace(pauseMarksRegex, '');
+		const rootCount = root ? (sameRootMap[root]?.length ?? 0) : 0;
+		const exactCount = uthmani ? (exactWordsMap[uthmani]?.length ?? 0) : 0;
+		if (!rootCount && !exactCount) return null;
+		return { rootCount, exactCount };
+	}
+
+	async function screenshotWord(wordKey) {
+		const html2canvas = (await import('html2canvas')).default;
+		const wordEl = document.getElementById(wordKey);
+
+		// Find the associated tooltip sibling (role="tooltip")
+		let tooltipEl = wordEl.nextElementSibling;
+		while (tooltipEl && tooltipEl.getAttribute('role') !== 'tooltip') {
+			tooltipEl = tooltipEl.nextElementSibling;
+		}
+
+		const pad = 8;
+		const wordRect = wordEl.getBoundingClientRect();
+		const totalW = wordRect.width + pad * 2;
+		const totalH = wordRect.height + pad * 2;
+
+		// Fetch root letters for this word
+		const rootData = await fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology');
+		const root = rootData?.data?.[wordKey]?.[1] ?? null;
+
+		// Isolated off-screen container — only our clones live here, no bleed
+		const wordClone = wordEl.cloneNode(true);
+		wordClone.querySelector('[title="Screenshot page"]')?.remove();
+		wordClone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
+
+		const counts = getWordCounts(wordKey);
+
+		if (root) {
+			const rootLabel = document.createElement('span');
+			rootLabel.textContent = Array.from(root).join(' · ');
+			rootLabel.style.cssText = 'font-size:18px;font-weight:bold;color:#222;font-family:serif;direction:rtl;';
+			wordClone.appendChild(rootLabel);
+
+			if (counts) {
+				const countsLabel = document.createElement('span');
+				countsLabel.textContent = `${counts.exactCount} / ${counts.rootCount}`;
+				countsLabel.style.cssText = 'font-size:12.5px;color:#555;font-family:sans-serif;';
+				wordClone.appendChild(countsLabel);
+			}
+		}
+
+		const wordIndexLabel = document.createElement('span');
+		wordIndexLabel.textContent = wordKey;
+		wordIndexLabel.style.cssText = 'font-size:12.5px;color:#222;font-family:sans-serif;';
+		wordClone.appendChild(wordIndexLabel);
+
+		wordClone.style.position = 'absolute';
+
+		const gapSize = 10;
+		wordClone.style.gap = `${gapSize}px`;
+
+		// Extra height: gaps between all children + the added labels' line heights
+		const labelHeight = Math.ceil(12.5 * 1.4);
+		const addedLabels = root ? (counts ? 3 : 2) : 1;
+		const extraH = Math.max(0, wordClone.children.length - 1) * gapSize + labelHeight * addedLabels;
+
+		const container = document.createElement('div');
+		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:white;`;
+
+		wordClone.style.left = `${pad}px`;
+		wordClone.style.top = `${pad}px`;
+		container.appendChild(wordClone);
+
+		document.body.appendChild(container);
+		const canvas = await html2canvas(container);
+		document.body.removeChild(container);
+
+		const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
+		const dataUrl = canvas.toDataURL('image/png');
+		const res = await fetch('/api/save-screenshot', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filename, dataUrl })
+		});
+		const { path } = await res.json();
+		console.warn(`[Screenshot] Saved to: ${path}`);
+	}
 </script>
 
 <!-- words -->
@@ -170,12 +284,21 @@
 		<div
 			id={wordKey}
 			class={`
-				word rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
+				word group relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
 				${$__audioSettings.playingWordKey === wordKey || ($__currentPage === 'morphology' && $__morphologyKey === wordKey) || ($__morphologyModalVisible && $__morphologyKey === wordKey) ? window.theme('bgSecondaryDark') : ''}
 				${$__currentPage === 'supplications' && word + 1 < (supplicationsFromQuran[key] || 0) ? ($__hideNonDuaPart ? 'hidden' : 'opacity-30') : ''}
 			`.trim()}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		>
+			{#if $__wordTooltip > 1}
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<span
+					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none opacity-0 group-hover:opacity-100 border z-10 hidden md:block"
+					on:click|stopPropagation={() => screenshotWord(wordKey)}
+					title="Screenshot page"
+				>📷</span>
+			{/if}
 			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 				<!-- Everything except Mushaf fonts -->
 				{#if ![2, 3].includes($__fontType)}
@@ -206,20 +329,18 @@
 
 		<!-- word tooltip -->
 		{#if $__wordTooltip > 1}
-			<Tooltip arrow={false} type="light" class="z-[19] hidden md:block text-center inline-flex font-sans font-normal">
-				{#if $__wordTooltip === 2}
-					{@html transliterationWords[word]}
-				{:else if $__wordTooltip === 3}
-					{@html `<span class="${selectableWordTranslations[$__wordTranslation].customClasses}">${translationWords[word]}</span>`}
-				{:else if $__wordTooltip === 4}
-					{@html `
-						<div class="flex flex-col">
-							${transliterationWords[word]} 
-							<div class="border-t"></div> 
-							<span class="${selectableWordTranslations[$__wordTranslation].customClasses}">${translationWords[word]}</span>
-						</div>
-					`}
-				{/if}
+			<Tooltip arrow={false} type="light" class="z-[19] hidden md:block text-center inline-flex font-sans font-normal ring-1 ring-black">
+				<div class="flex flex-col items-center gap-1">
+					{#if $__wordTooltip === 2 || $__wordTooltip === 4}
+						<span>{@html transliterationWords[word]}</span>
+					{/if}
+					{#if formatRoot(wordKey)}
+						<span class="text-xl font-bold" style="font-family: serif; direction: rtl;">{formatRoot(wordKey)}</span>
+					{/if}
+					{#if getWordCounts(wordKey)}
+						<span class="text-xs opacity-70">{getWordCounts(wordKey).exactCount} / {getWordCounts(wordKey).rootCount}</span>
+					{/if}
+				</div>
 			</Tooltip>
 		{/if}
 	{/if}
