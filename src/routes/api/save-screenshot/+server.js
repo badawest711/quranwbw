@@ -1,7 +1,8 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { json, error } from '@sveltejs/kit';
-import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_ENABLED, SAVE_LOCAL, LOCAL_SCREENSHOTS_DIR } from '$env/static/private';
+import { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, SAVE_LOCAL, LOCAL_SCREENSHOTS_DIR } from '$env/static/private';
+import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 export async function POST({ request }) {
 	try {
@@ -14,7 +15,7 @@ export async function POST({ request }) {
 			await writeFile(join(LOCAL_SCREENSHOTS_DIR, filename), buffer);
 		}
 
-		if (TELEGRAM_ENABLED === 'true') {
+		if (PUBLIC_TELEGRAM_ENABLED === 'true') {
 			const formData = new FormData();
 			formData.append('chat_id', TELEGRAM_CHAT_ID);
 			formData.append('photo', new Blob([buffer], { type: 'image/png' }), filename);

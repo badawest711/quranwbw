@@ -17,6 +17,7 @@
 	import { getMushafWordFontLink, isFirefoxDarkNonTajweed, isFirefoxDarkTajweed } from '$utils/getMushafWordFontLink';
 	import { fetchAndCacheJson } from '$utils/fetchData';
 	import { morphologyDataUrls } from '$data/websiteSettings';
+	import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
@@ -164,6 +165,7 @@
 	}
 
 	let hoveredWordKey = null;
+	let hoveredButtonKey = null;
 
 	let rootDataMap = {};
 	let sameRootMap = {};
@@ -200,6 +202,22 @@
 	}
 
 	async function screenshotWord(wordKey) {
+		// Audio ping on click (double ping if Telegram is enabled)
+		const ctx = new AudioContext();
+		const pingCount = PUBLIC_TELEGRAM_ENABLED === 'true' ? 2 : 1;
+		for (let i = 0; i < pingCount; i++) {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.frequency.value = 880;
+			const t = ctx.currentTime + i * 0.18;
+			gain.gain.setValueAtTime(0.3, t);
+			gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+			osc.start(t);
+			osc.stop(t + 0.15);
+		}
+
 		const html2canvas = (await import('html2canvas')).default;
 		const wordEl = document.getElementById(wordKey);
 
@@ -220,7 +238,7 @@
 
 		// Isolated off-screen container — only our clones live here, no bleed
 		const wordClone = wordEl.cloneNode(true);
-		wordClone.querySelector('[title="Screenshot page"]')?.remove();
+		wordClone.querySelectorAll('[data-screenshot-exclude]').forEach(el => el.remove());
 		wordClone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
 
 		const counts = getWordCounts(wordKey);
@@ -246,7 +264,7 @@
 
 		wordClone.style.position = 'absolute';
 
-		const gapSize = 10;
+		const gapSize = 15;
 		wordClone.style.gap = `${gapSize}px`;
 
 		// Extra height: gaps between all children + the added labels' line heights
@@ -297,11 +315,18 @@
 				<!-- svelte-ignore a11y-click-events-have-key-events -->
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<span
-					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none border z-10 hidden md:block transition-opacity bg-[#FA8072]"
+					data-screenshot-exclude
+					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none border z-10 hidden md:block transition-all {hoveredButtonKey === wordKey ? 'bg-cyan-400' : 'bg-[#FA8072]'}"
 					style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
 					on:click|stopPropagation={() => screenshotWord(wordKey)}
-					title="Screenshot page"
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
+					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
 				>📷</span>
+				{#if hoveredButtonKey === wordKey}
+					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
+						Screenshot word
+					</div>
+				{/if}
 			{/if}
 			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 				<!-- Everything except Mushaf fonts -->
