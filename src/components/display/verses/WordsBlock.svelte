@@ -167,6 +167,20 @@
 	let hoveredWordKey = null;
 	let hoveredButtonKey = null;
 
+	// ── Word button config ──────────────────────────────────────────────────────
+	// Top-left pair: rendered side by side in a shared flex wrapper.
+	const topLeftButtons = [
+		{ icon: '⭐', bg: '#B0E0E6' },
+		{ icon: '🔖', bg: '#DDA0DD' }
+	];
+
+	// Individual corner buttons. Modify icon / bg / position / rounded freely.
+	const cornerButtons = [
+		{ icon: '◀', position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: '#B0E0E6' },
+		{ icon: '▶', position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: '#DDA0DD' }
+	];
+	// ────────────────────────────────────────────────────────────────────────────
+
 	let rootDataMap = {};
 	let sameRootMap = {};
 	let exactWordsMap = {};
@@ -328,6 +342,35 @@
 					</div>
 				{/if}
 			{/if}
+
+			<!-- svelte-ignore a11y-click-events-have-key-events -->
+			<!-- svelte-ignore a11y-no-static-element-interactions -->
+
+			<!-- top-left pair -->
+			<div
+				data-screenshot-exclude
+				class="absolute top-0 left-0 flex hidden md:flex z-10 transition-all"
+				style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
+			>
+				{#each topLeftButtons as btn}
+					<span
+						class="text-[9px] leading-none px-1 py-0.5 rounded-br cursor-pointer select-none border"
+						style="background:{btn.bg};"
+						on:click|stopPropagation={() => {}}
+					>{btn.icon}</span>
+				{/each}
+			</div>
+
+			<!-- corner buttons -->
+			{#each cornerButtons as btn}
+				<span
+					data-screenshot-exclude
+					class="absolute {btn.position} {btn.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
+					style="opacity:{hoveredWordKey === wordKey ? 1 : 0};background:{btn.bg};"
+					on:click|stopPropagation={() => {}}
+				>{btn.icon}</span>
+			{/each}
+
 			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 				<!-- Everything except Mushaf fonts -->
 				{#if ![2, 3].includes($__fontType)}
