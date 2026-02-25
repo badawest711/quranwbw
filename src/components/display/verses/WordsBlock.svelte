@@ -281,7 +281,7 @@
 			label.style.cssText = 'text-align:center;font-size:11px;color:#555;font-family:sans-serif;margin-top:4px;';
 
 			const wrapper = document.createElement('div');
-			wrapper.style.cssText = `position:fixed;top:-9999px;left:-9999px;background:white;padding:${pad}px;display:flex;flex-direction:column;align-items:center;`;
+			wrapper.style.cssText = `position:fixed;top:-9999px;left:-9999px;background:#F4F0E4;padding:${pad}px;display:flex;flex-direction:column;align-items:center;`;
 			wrapper.appendChild(wordRow);
 			wrapper.appendChild(label);
 
@@ -355,7 +355,7 @@
 		const extraH = Math.max(0, wordClone.children.length - 1) * gapSize + labelHeight * addedLabels;
 
 		const container = document.createElement('div');
-		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:white;`;
+		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:#F4F0E4;`;
 
 		wordClone.style.left = `${pad}px`;
 		wordClone.style.top = `${pad}px`;
