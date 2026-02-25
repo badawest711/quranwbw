@@ -166,7 +166,8 @@
 
 	let hoveredWordKey = null;
 	let hoveredButtonKey = null;
-	let selectedWordKeys = new Set();
+	let startWordIndex = null;
+	let stopWordIndex = null;
 	let anchorWordIndex = null;
 
 	// ── Word button config ──────────────────────────────────────────────────────
@@ -237,13 +238,15 @@
 		const html2canvas = (await import('html2canvas')).default;
 		const pad = 8;
 
-		if (selectedWordKeys.size > 0) {
+		if (startWordIndex !== null) {
 			// ── Multi-word screenshot ─────────────────────────────────────────────
 			// Collect anchor + all highlighted words, sorted ascending by word index.
 			// direction:rtl on the flex row makes word 1 appear rightmost — correct Arabic order.
-			const allKeys = new Set(selectedWordKeys);
-			allKeys.add(wordKey);
-			const sortedKeys = Array.from(allKeys).sort((a, b) => +a.split(':')[2] - +b.split(':')[2]);
+			// Build sorted key list from range [startWordIndex, stopWordIndex] + anchor
+			const rangeIndices = new Set();
+			for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
+			rangeIndices.add(anchorWordIndex);
+			const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
 
 			const wordRow = document.createElement('div');
 			wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:4px;';
@@ -276,8 +279,11 @@
 			});
 
 			const label = document.createElement('div');
-			const wordNums = sortedKeys.map((k) => k.split(':')[2]).join('–');
-			label.textContent = `${chapter}:${verse}  words ${wordNums}`;
+			const startNum = startWordIndex + 1;
+			const stopNum = stopWordIndex + 1;
+			label.textContent = startNum === stopNum
+				? `${chapter}:${verse}  word ${startNum}`
+				: `${chapter}:${verse}  words ${startNum}–${stopNum}`;
 			label.style.cssText = 'text-align:center;font-size:11px;color:#555;font-family:sans-serif;margin-top:4px;';
 
 			const wrapper = document.createElement('div');
@@ -378,26 +384,30 @@
 	function selectAdjacentWord(currentWordIndex, direction) {
 		anchorWordIndex = currentWordIndex;
 
-		const next = new Set(selectedWordKeys);
-		let targetIndex;
-		if (next.size === 0) {
-			// Nothing selected yet — select the word adjacent to the clicked word
-			targetIndex = currentWordIndex + direction;
+		if (startWordIndex === null) {
+			// First selection — pick the immediate neighbour
+			const target = currentWordIndex + direction;
+			if (target < 0 || target >= value.meta.words) return;
+			startWordIndex = target;
+			stopWordIndex = target;
+		} else if (direction === 1) {
+			// Extend upper boundary (higher index = left in RTL)
+			let next = stopWordIndex + 1;
+			if (next === currentWordIndex) next++;
+			if (next >= value.meta.words) return;
+			stopWordIndex = next;
 		} else {
-			// Extend from the frontier of the current selection
-			const indices = Array.from(next).map((k) => +k.split(':')[2] - 1);
-			targetIndex = direction === 1 ? Math.max(...indices) + 1 : Math.min(...indices) - 1;
-			// Skip the clicked word itself
-			if (targetIndex === currentWordIndex) targetIndex += direction;
+			// Extend lower boundary (lower index = right in RTL)
+			let next = startWordIndex - 1;
+			if (next === currentWordIndex) next--;
+			if (next < 0) return;
+			startWordIndex = next;
 		}
-		if (targetIndex < 0 || targetIndex >= value.meta.words) return;
-		const targetKey = getWordKey(targetIndex);
-		next.has(targetKey) ? next.delete(targetKey) : next.add(targetKey);
-		selectedWordKeys = next;
 	}
 
 	function clearHighlights() {
-		selectedWordKeys = new Set();
+		startWordIndex = null;
+		stopWordIndex = null;
 		anchorWordIndex = null;
 	}
 </script>
@@ -414,8 +424,8 @@
 				word relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
 				${$__audioSettings.playingWordKey === wordKey || ($__currentPage === 'morphology' && $__morphologyKey === wordKey) || ($__morphologyModalVisible && $__morphologyKey === wordKey) ? window.theme('bgSecondaryDark') : ''}
 				${$__currentPage === 'supplications' && word + 1 < (supplicationsFromQuran[key] || 0) ? ($__hideNonDuaPart ? 'hidden' : 'opacity-30') : ''}
-				${selectedWordKeys.has(wordKey) ? 'ring-2 ring-blue-400' : ''}
-			${selectedWordKeys.size > 0 && anchorWordIndex === word ? 'ring-2 ring-red-400' : ''}
+				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}
+				${anchorWordIndex !== word && startWordIndex !== null && word >= startWordIndex && word <= stopWordIndex ? 'ring-2 ring-blue-400' : ''}
 			`.trim()}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
@@ -468,7 +478,7 @@
 			{/each}
 
 			<!-- cancel highlight button -->
-			{#if selectedWordKeys.size > 0}
+			{#if startWordIndex !== null}
 				<!-- svelte-ignore a11y-click-events-have-key-events -->
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<span
