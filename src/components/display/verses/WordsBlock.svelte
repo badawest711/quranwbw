@@ -235,6 +235,73 @@
 		}
 
 		const html2canvas = (await import('html2canvas')).default;
+		const pad = 8;
+
+		if (selectedWordKeys.size > 0) {
+			// ── Multi-word screenshot ─────────────────────────────────────────────
+			// Collect anchor + all highlighted words, sorted ascending by word index.
+			// direction:rtl on the flex row makes word 1 appear rightmost — correct Arabic order.
+			const allKeys = new Set(selectedWordKeys);
+			allKeys.add(wordKey);
+			const sortedKeys = Array.from(allKeys).sort((a, b) => +a.split(':')[2] - +b.split(':')[2]);
+
+			const wordRow = document.createElement('div');
+			wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:4px;';
+
+			sortedKeys.forEach((key) => {
+				const el = document.getElementById(key);
+				const clone = el.cloneNode(true);
+				clone.querySelectorAll('[data-screenshot-exclude]').forEach((e) => e.remove());
+				clone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
+				clone.classList.remove('ring-2', 'ring-blue-400', 'ring-red-400');
+				clone.style.cssText += 'position:relative;flex:0 0 auto;gap:15px;';
+
+				const root = formatRoot(key);
+				if (root) {
+					const rootLabel = document.createElement('span');
+					rootLabel.textContent = root;
+					rootLabel.style.cssText = 'font-size:18px;font-weight:bold;color:#222;font-family:serif;direction:rtl;';
+					clone.appendChild(rootLabel);
+
+					const counts = getWordCounts(key);
+					if (counts) {
+						const countsLabel = document.createElement('span');
+						countsLabel.textContent = `${counts.rootCount} / ${counts.exactCount}`;
+						countsLabel.style.cssText = 'font-size:12.5px;color:#555;font-family:sans-serif;';
+						clone.appendChild(countsLabel);
+					}
+				}
+
+				wordRow.appendChild(clone);
+			});
+
+			const label = document.createElement('div');
+			const wordNums = sortedKeys.map((k) => k.split(':')[2]).join('–');
+			label.textContent = `${chapter}:${verse}  words ${wordNums}`;
+			label.style.cssText = 'text-align:center;font-size:11px;color:#555;font-family:sans-serif;margin-top:4px;';
+
+			const wrapper = document.createElement('div');
+			wrapper.style.cssText = `position:fixed;top:-9999px;left:-9999px;background:white;padding:${pad}px;display:flex;flex-direction:column;align-items:center;`;
+			wrapper.appendChild(wordRow);
+			wrapper.appendChild(label);
+
+			document.body.appendChild(wrapper);
+			const canvas = await html2canvas(wrapper);
+			document.body.removeChild(wrapper);
+
+			const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
+			const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
+			const dataUrl = canvas.toDataURL('image/png');
+			await fetch('/api/save-screenshot', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ filename, dataUrl })
+			});
+			console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+			return;
+		}
+
+		// ── Single-word screenshot (existing behaviour) ───────────────────────────
 		const wordEl = document.getElementById(wordKey);
 
 		// Find the associated tooltip sibling (role="tooltip")
@@ -243,7 +310,6 @@
 			tooltipEl = tooltipEl.nextElementSibling;
 		}
 
-		const pad = 8;
 		const wordRect = wordEl.getBoundingClientRect();
 		const totalW = wordRect.width + pad * 2;
 		const totalH = wordRect.height + pad * 2;
