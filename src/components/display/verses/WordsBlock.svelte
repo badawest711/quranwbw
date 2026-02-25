@@ -166,6 +166,8 @@
 
 	let hoveredWordKey = null;
 	let hoveredButtonKey = null;
+	let selectedWordKeys = new Set();
+	let anchorWordIndex = null;
 
 	// ── Word button config ──────────────────────────────────────────────────────
 	// Top-left pair: rendered side by side in a shared flex wrapper.
@@ -176,8 +178,8 @@
 
 	// Individual corner buttons. Modify icon / bg / position / rounded freely.
 	const cornerButtons = [
-		{ icon: '◀', position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: '#B0E0E6' },
-		{ icon: '▶', position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: '#DDA0DD' }
+		{ icon: '◀', position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: '#B0E0E6', onClick: (word) => selectAdjacentWord(word, +1) },
+		{ icon: '▶', position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: '#B0E0E6', onClick: (word) => selectAdjacentWord(word, -1) }
 	];
 	// ────────────────────────────────────────────────────────────────────────────
 
@@ -306,6 +308,32 @@
 		});
 		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 	}
+
+	function selectAdjacentWord(currentWordIndex, direction) {
+		anchorWordIndex = currentWordIndex;
+
+		const next = new Set(selectedWordKeys);
+		let targetIndex;
+		if (next.size === 0) {
+			// Nothing selected yet — select the word adjacent to the clicked word
+			targetIndex = currentWordIndex + direction;
+		} else {
+			// Extend from the frontier of the current selection
+			const indices = Array.from(next).map((k) => +k.split(':')[2] - 1);
+			targetIndex = direction === 1 ? Math.max(...indices) + 1 : Math.min(...indices) - 1;
+			// Skip the clicked word itself
+			if (targetIndex === currentWordIndex) targetIndex += direction;
+		}
+		if (targetIndex < 0 || targetIndex >= value.meta.words) return;
+		const targetKey = getWordKey(targetIndex);
+		next.has(targetKey) ? next.delete(targetKey) : next.add(targetKey);
+		selectedWordKeys = next;
+	}
+
+	function clearHighlights() {
+		selectedWordKeys = new Set();
+		anchorWordIndex = null;
+	}
 </script>
 
 <!-- words -->
@@ -320,6 +348,8 @@
 				word relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
 				${$__audioSettings.playingWordKey === wordKey || ($__currentPage === 'morphology' && $__morphologyKey === wordKey) || ($__morphologyModalVisible && $__morphologyKey === wordKey) ? window.theme('bgSecondaryDark') : ''}
 				${$__currentPage === 'supplications' && word + 1 < (supplicationsFromQuran[key] || 0) ? ($__hideNonDuaPart ? 'hidden' : 'opacity-30') : ''}
+				${selectedWordKeys.has(wordKey) ? 'ring-2 ring-blue-400' : ''}
+			${selectedWordKeys.size > 0 && anchorWordIndex === word ? 'ring-2 ring-red-400' : ''}
 			`.trim()}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
@@ -367,9 +397,21 @@
 					data-screenshot-exclude
 					class="absolute {btn.position} {btn.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
 					style="opacity:{hoveredWordKey === wordKey ? 1 : 0};background:{btn.bg};"
-					on:click|stopPropagation={() => {}}
+										on:click|stopPropagation={() => btn.onClick(word)}
 				>{btn.icon}</span>
 			{/each}
+
+			<!-- cancel highlight button -->
+			{#if selectedWordKeys.size > 0}
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<span
+					data-screenshot-exclude
+					class="absolute bottom-0 left-1/2 -translate-x-1/2 text-[9px] leading-none px-1 py-0.5 rounded-t cursor-pointer select-none border z-10 hidden md:block bg-red-300 transition-all"
+					style="opacity:{hoveredWordKey === wordKey ? 1 : 0};"
+					on:click|stopPropagation={clearHighlights}
+				>✕</span>
+			{/if}
 
 			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 				<!-- Everything except Mushaf fonts -->
