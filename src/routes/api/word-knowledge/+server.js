@@ -15,6 +15,14 @@ try {
 }
 
 /**
+ * GET /api/word-knowledge
+ * Returns the full word-knowledge store as { words: WordEntry[] }.
+ */
+export async function GET() {
+	return json(store.toJSON());
+}
+
+/**
  * POST /api/word-knowledge
  * Body: { arabic, translation, root, surah, ayah, startWordIndex, endWordIndex }
  * Increments numOfScreenshots if the entry already exists, otherwise inserts it.

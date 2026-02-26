@@ -19,7 +19,7 @@
 	import CopyShareVerseModal from '$ui/Modals/CopyShareVerseModal.svelte';
 	import ConfirmationAlertModal from '$ui/Modals/ConfirmationAlertModal.svelte';
 
-	import { __userSettings, __currentPage, __chapterNumber, __settingsDrawerHidden, __wakeLockEnabled, __fontType, __wordTranslation, __mushafMinimalModeEnabled, __topNavbarVisible, __bottomToolbarVisible, __displayType, __wideWesbiteLayoutEnabled, __signLanguageModeEnabled, __wordTransliterationEnabled } from '$utils/stores';
+	import { __userSettings, __currentPage, __chapterNumber, __settingsDrawerHidden, __wakeLockEnabled, __fontType, __wordTranslation, __mushafMinimalModeEnabled, __topNavbarVisible, __bottomToolbarVisible, __displayType, __wideWesbiteLayoutEnabled, __signLanguageModeEnabled, __wordTransliterationEnabled, __wordKnowledge } from '$utils/stores';
 	import { debounce } from '$utils/debounce';
 	import { toggleNavbar } from '$utils/toggleNavbar';
 	import { resetAudioSettings } from '$utils/audioController';
@@ -27,6 +27,17 @@
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { getWebsiteWidth } from '$utils/getWebsiteWidth';
+	import { onMount } from 'svelte';
+
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/word-knowledge');
+			const data = await res.json();
+			__wordKnowledge.set(data.words ?? []);
+		} catch (err) {
+			console.warn('[word-knowledge] Failed to load:', err);
+		}
+	});
 
 	const defaultPaddingTop = 'pt-16';
 	const defaultPaddingBottom = 'pb-8';

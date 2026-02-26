@@ -1,7 +1,8 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
 
-let __currentPage,
+let __wordKnowledge,
+	__currentPage,
 	__chapterNumber,
 	__pageNumber,
 	__chapterData,
@@ -215,6 +216,9 @@ if (browser) {
 
 	// to store all the offline mode settings
 	__offlineModeSettings = writable(userSettings.offlineModeSettings);
+
+	// to store the word-knowledge progression data (mirrors progression/word-knowledge.json)
+	__wordKnowledge = writable([]);
 }
 
 export {
@@ -273,5 +277,6 @@ export {
 	__wideWesbiteLayoutEnabled,
 	__signLanguageModeEnabled,
 	__verseWordBlocks,
-	__offlineModeSettings
+	__offlineModeSettings,
+	__wordKnowledge
 };

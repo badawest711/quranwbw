@@ -10,7 +10,7 @@
 	import { onMount } from 'svelte';
 	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations } from '$data/options';
 	import { supplicationsFromQuran } from '$data/quranMeta';
-	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled } from '$utils/stores';
+	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge } from '$utils/stores';
 	import { loadFont } from '$utils/loadFont';
 	import { wordAudioController } from '$utils/audioController';
 	import { updateSettings } from '$utils/updateSettings';
@@ -307,19 +307,23 @@
 			const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
 			const translationText = sortedKeys.map((k) => translationWords[parseInt(k.split(':')[2]) - 1]).join(' ');
 			const roots = sortedKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
-			await fetch('/api/word-knowledge', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					surah: parseInt(chapter),
-					ayah: parseInt(verse),
-					startWordIndex: Math.min(...wordIndices),
-					endWordIndex: Math.max(...wordIndices),
-					arabic: arabicText,
-					translation: translationText,
-					root: roots.length ? roots.join(' / ') : null
-				})
-			});
+			{
+				const wkRes = await fetch('/api/word-knowledge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						surah: parseInt(chapter),
+						ayah: parseInt(verse),
+						startWordIndex: Math.min(...wordIndices),
+						endWordIndex: Math.max(...wordIndices),
+						arabic: arabicText,
+						translation: translationText,
+						root: roots.length ? roots.join(' / ') : null
+					})
+				});
+				const { entry: wkEntry } = await wkRes.json();
+				syncWordKnowledgeEntry(wkEntry);
+			}
 			console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 			return;
 		}
@@ -396,19 +400,23 @@
 			body: JSON.stringify({ filename, dataUrl })
 		});
 		const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
-		await fetch('/api/word-knowledge', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				surah: parseInt(chapter),
-				ayah: parseInt(verse),
-				startWordIndex: _wIdx + 1,
-				endWordIndex: _wIdx + 1,
-				arabic: arabicWords[_wIdx],
-				translation: translationWords[_wIdx],
-				root: rootDataMap[wordKey]?.[1] ?? null
-			})
-		});
+		{
+			const wkRes = await fetch('/api/word-knowledge', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					surah: parseInt(chapter),
+					ayah: parseInt(verse),
+					startWordIndex: _wIdx + 1,
+					endWordIndex: _wIdx + 1,
+					arabic: arabicWords[_wIdx],
+					translation: translationWords[_wIdx],
+					root: rootDataMap[wordKey]?.[1] ?? null
+				})
+			});
+			const { entry: wkEntry } = await wkRes.json();
+			syncWordKnowledgeEntry(wkEntry);
+		}
 		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 	}
 
@@ -441,6 +449,39 @@
 		stopWordIndex = null;
 		anchorWordIndex = null;
 	}
+
+	// Highlighted word indices (1-based) for this verse.
+	// Match by Arabic text: any position whose arabicWords entry appears in the knowledge store.
+	// Multi-word entries (arabic joined with spaces) are split so each individual form is matched.
+	let highlightedWordIndices = new Set();
+	$: {
+		const knowledgeArabicSet = new Set($__wordKnowledge.flatMap((e) => e.arabic.split(' ')));
+		highlightedWordIndices = new Set(
+			arabicWords.reduce((acc, w, i) => {
+				if (knowledgeArabicSet.has(w)) acc.push(i + 1); // 1-based
+				return acc;
+			}, [])
+		);
+	}
+
+	// Sync a returned entry into the client store so highlights update immediately
+	function syncWordKnowledgeEntry(entry) {
+		__wordKnowledge.update((words) => {
+			const idx = words.findIndex(
+				(e) =>
+					e.surah === entry.surah &&
+					e.ayah === entry.ayah &&
+					e.startWordIndex === entry.startWordIndex &&
+					e.endWordIndex === entry.endWordIndex
+			);
+			if (idx >= 0) {
+				const updated = [...words];
+				updated[idx] = entry;
+				return updated;
+			}
+			return [...words, entry];
+		});
+	}
 </script>
 
 <!-- words -->
@@ -458,6 +499,7 @@
 				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}
 				${anchorWordIndex !== word && startWordIndex !== null && word >= startWordIndex && word <= stopWordIndex ? 'ring-2 ring-blue-400' : ''}
 			`.trim()}
+			style={highlightedWordIndices.has(word + 1) ? 'background-color: #bcd9a240;' : ''}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
 		on:mouseleave={() => { hoveredWordKey = null; }}
