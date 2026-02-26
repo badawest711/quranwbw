@@ -303,6 +303,23 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ filename, dataUrl })
 			});
+			const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
+			const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
+			const translationText = sortedKeys.map((k) => translationWords[parseInt(k.split(':')[2]) - 1]).join(' ');
+			const roots = sortedKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
+			await fetch('/api/word-knowledge', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					surah: parseInt(chapter),
+					ayah: parseInt(verse),
+					startWordIndex: Math.min(...wordIndices),
+					endWordIndex: Math.max(...wordIndices),
+					arabic: arabicText,
+					translation: translationText,
+					root: roots.length ? roots.join(' / ') : null
+				})
+			});
 			console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 			return;
 		}
@@ -377,6 +394,20 @@
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ filename, dataUrl })
+		});
+		const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
+		await fetch('/api/word-knowledge', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				surah: parseInt(chapter),
+				ayah: parseInt(verse),
+				startWordIndex: _wIdx + 1,
+				endWordIndex: _wIdx + 1,
+				arabic: arabicWords[_wIdx],
+				translation: translationWords[_wIdx],
+				root: rootDataMap[wordKey]?.[1] ?? null
+			})
 		});
 		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 	}
