@@ -6,7 +6,7 @@ import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 export async function POST({ request }) {
 	try {
-		const { filename, dataUrl } = await request.json();
+		const { filename, dataUrl, caption = '' } = await request.json();
 		const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
 		const buffer = Buffer.from(base64, 'base64');
 
@@ -19,6 +19,10 @@ export async function POST({ request }) {
 			const formData = new FormData();
 			formData.append('chat_id', TELEGRAM_CHAT_ID);
 			formData.append('photo', new Blob([buffer], { type: 'image/png' }), filename);
+			if (caption) {
+				formData.append('caption', `<b><i>${caption}</i></b>`);
+				formData.append('parse_mode', 'HTML');
+			}
 
 			const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
 				method: 'POST',

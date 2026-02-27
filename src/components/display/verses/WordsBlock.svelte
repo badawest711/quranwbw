@@ -69,6 +69,10 @@
 	const LABEL_HEIGHT_MULTIPLIER = 1.4;
 	const ROOT_SEPARATOR = ' · ';
 
+	// Context menu dialog
+	const DIALOG_MIN_WIDTH = '580px';
+	const DIALOG_TEXTAREA_ROWS = 3;
+
 	// Regex patterns
 	const PAUSE_MARKS_REGEX = /[ۖۗۘۙۚۛۜ۩۞]/g;
 
@@ -226,6 +230,24 @@
 	// Hover states
 	let hoveredWordKey = null;
 	let hoveredButtonKey = null;
+
+	// Screenshot context menu dialog
+	let contextMenuDialogOpen = false;
+	let contextMenuDialogText = '';
+	let contextMenuDialogWordKey = null;
+
+	function openContextMenuDialog(wk) {
+		contextMenuDialogWordKey = wk;
+		contextMenuDialogText = '';
+		contextMenuDialogOpen = true;
+	}
+
+	function confirmContextMenuDialog() {
+		const wordKey = contextMenuDialogWordKey;
+		const caption = contextMenuDialogText;
+		contextMenuDialogOpen = false;
+		screenshotWord(wordKey, caption);
+	}
 
 	// Word selection for multi-word screenshots
 	let startWordIndex = null;
@@ -419,12 +441,12 @@
 		return canvas;
 	}
 
-	async function sendScreenshotToServer(filename, canvas) {
+	async function sendScreenshotToServer(filename, canvas, caption = '') {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl })
+			body: JSON.stringify({ filename, dataUrl, caption })
 		});
 	}
 
@@ -474,7 +496,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	return clone;
 } 
 
-async function screenshotMultipleWords() {
+async function screenshotMultipleWords(caption = '') {
 	const rangeIndices = new Set();
 	for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
 	rangeIndices.add(anchorWordIndex);
@@ -505,7 +527,7 @@ async function screenshotMultipleWords() {
 
 		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		await sendScreenshotToServer(filename, canvas);
+		await sendScreenshotToServer(filename, canvas, caption);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
@@ -525,7 +547,7 @@ async function screenshotMultipleWords() {
 		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 	}
 
-	async function screenshotSingleWord(wordKey) {
+	async function screenshotSingleWord(wordKey, caption = '') {
 	const wordEl = document.getElementById(wordKey);
 	const wordRect = wordEl.getBoundingClientRect();
 	const totalW = wordRect.width + SCREENSHOT_PAD * 2;
@@ -547,7 +569,7 @@ async function screenshotMultipleWords() {
 
 	const canvas = await captureWordVisualsToCanvas(container);
 	const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-	await sendScreenshotToServer(filename, canvas);
+	await sendScreenshotToServer(filename, canvas, caption);
 
 	const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
 	await sendWordKnowledgeData(
@@ -563,12 +585,12 @@ async function screenshotMultipleWords() {
 	console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
 }
 
-	async function screenshotWord(wordKey) {
+	async function screenshotWord(wordKey, caption = '') {
 		playScreenshotPing();
 		if (startWordIndex !== null) {
-			await screenshotMultipleWords();
+			await screenshotMultipleWords(caption);
 		} else {
-			await screenshotSingleWord(wordKey);
+			await screenshotSingleWord(wordKey, caption);
 		}
 	}
 </script>
@@ -601,6 +623,7 @@ async function screenshotMultipleWords() {
 					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none border z-10 hidden md:block transition-all {hoveredButtonKey === wordKey ? 'bg-cyan-400' : 'bg-[#FA8072]'}"
 					style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
 					on:click|stopPropagation={() => screenshotWord(wordKey)}
+				on:contextmenu|preventDefault|stopPropagation={() => openContextMenuDialog(wordKey)}
 					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
 					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
 				>📷</span>
@@ -721,4 +744,37 @@ async function screenshotMultipleWords() {
 	<Tooltip arrow={false} type="light" class="z-[19] inline-flex font-sans font-normal">
 		End of {key}
 	</Tooltip>
+{/if}
+
+{#if contextMenuDialogOpen}
+	<!-- svelte-ignore a11y-click-events-have-key-events -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="fixed inset-0 z-[999] flex items-center justify-center bg-black/40"
+		on:click|self={() => (contextMenuDialogOpen = false)}
+	>
+		<div
+			class="shadow-xl p-6 flex flex-col gap-4 font-sans rounded-3xl border {window.theme('bgMain')} {window.theme('border')} {window.theme('text')}"
+			style="min-width: {DIALOG_MIN_WIDTH};"
+		>
+			<textarea
+				bind:value={contextMenuDialogText}
+				rows={DIALOG_TEXTAREA_ROWS}
+				dir="ltr"
+				class="block w-full p-2.5 text-sm text-left rounded-3xl bg-transparent border resize-none overflow-y-auto {window.theme('border')} {window.theme('input')} {window.theme('placeholder')}"
+				placeholder=""
+				on:keydown={(e) => { if (e.key === 'Escape') contextMenuDialogOpen = false; }}
+			></textarea>
+			<div class="flex gap-2 justify-end">
+				<button
+					class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 inline-flex items-center justify-center py-2 px-4 rounded-3xl transition-colors duration-150 cursor-pointer text-sm"
+					on:click={() => (contextMenuDialogOpen = false)}
+				>Cancel</button>
+				<button
+					class="inline-flex items-center justify-center py-2 px-4 {window.theme('input')} rounded-3xl transition-colors duration-150 cursor-pointer text-sm {window.theme('hoverBorder')} {window.theme('bgSecondaryLight')}"
+					on:click={confirmContextMenuDialog}
+				>OK</button>
+			</div>
+		</div>
+	</div>
 {/if}
