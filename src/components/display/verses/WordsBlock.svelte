@@ -16,7 +16,7 @@
 	import { updateSettings } from '$utils/updateSettings';
 	import { getMushafWordFontLink, isFirefoxDarkNonTajweed, isFirefoxDarkTajweed } from '$utils/getMushafWordFontLink';
 	import { fetchAndCacheJson } from '$utils/fetchData';
-	import { morphologyDataUrls } from '$data/websiteSettings';
+	import { morphologyDataUrls, wordsAudioURL } from '$data/websiteSettings';
 	import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -441,12 +441,17 @@
 		return canvas;
 	}
 
-	async function sendScreenshotToServer(filename, canvas, caption = '') {
+	function getWordAudioUrl(wk) {
+		const [ch, vs, wd] = wk.split(':').map(Number);
+		return `${wordsAudioURL}/${ch}/${String(ch).padStart(3, '0')}_${String(vs).padStart(3, '0')}_${String(wd).padStart(3, '0')}.mp3?version=2`;
+	}
+
+	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = []) {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl, caption })
+			body: JSON.stringify({ filename, dataUrl, caption, audioUrls })
 		});
 	}
 
@@ -527,7 +532,8 @@ async function screenshotMultipleWords(caption = '') {
 
 		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		await sendScreenshotToServer(filename, canvas, caption);
+		const audioUrls = sortedKeys.map(getWordAudioUrl);
+		await sendScreenshotToServer(filename, canvas, caption, audioUrls);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
@@ -544,7 +550,7 @@ async function screenshotMultipleWords(caption = '') {
 			roots.length ? roots.join(' / ') : null
 		);
 
-		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+		console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicText}`);
 	}
 
 	async function screenshotSingleWord(wordKey, caption = '') {
@@ -569,7 +575,7 @@ async function screenshotMultipleWords(caption = '') {
 
 	const canvas = await captureWordVisualsToCanvas(container);
 	const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-	await sendScreenshotToServer(filename, canvas, caption);
+	await sendScreenshotToServer(filename, canvas, caption, [getWordAudioUrl(wordKey)]);
 
 	const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
 	await sendWordKnowledgeData(
@@ -582,7 +588,7 @@ async function screenshotMultipleWords(caption = '') {
 		rootDataMap[wordKey]?.[1] ?? null
 	);
 
-	console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+	console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicWords[_wIdx]}`);
 }
 
 	async function screenshotWord(wordKey, caption = '') {
