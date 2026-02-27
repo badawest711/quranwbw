@@ -19,6 +19,69 @@
 	import { morphologyDataUrls } from '$data/websiteSettings';
 	import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
+	// ═══════════════════════════════════════════════════════════════════════════
+	// CONSTANTS & MAGIC VALUES
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// Font & Display
+	const MUSHAF_FONT_TYPES = [2, 3];
+	const WBW_DISPLAY_TYPES = [1, 3, 7];
+	const FONT_TYPE_TAJWEED = 3;
+	const FONT_TYPE_NON_TAJWEED = 2;
+	const FONT_TYPE_SPECIAL = 9;
+	const THEME_MOCHA_NIGHT = 5;
+	const THEME_DARK_LUXURY = 9;
+	const THEME_GOLDEN_GLINT = 1;
+
+	// Pages
+	const PAGE_MORPHOLOGY = 'morphology';
+	const PAGE_MUSHAF = 'mushaf';
+	const PAGE_SUPPLICATIONS = 'supplications';
+
+	// Colors
+	const COLOR_ROOT_TEXT = '#222';
+	const COLOR_MUTED_TEXT = '#555';
+	const COLOR_BACKGROUND_SCREENSHOT = '#F4F0E4';
+	const COLOR_TOOLTIP_BG = '#7FFFD4';
+	const COLOR_HIGHLIGHT_BG = '#bcd9a240';
+	const COLOR_ROOT_LABEL_FONT = 'serif';
+	const BUTTON_COLOR_LIGHT_BLUE = '#B0E0E6';
+	const BUTTON_COLOR_PLUM = '#DDA0DD';
+
+	// Screenshot & Audio
+	const SCREENSHOT_PAD = 8;
+	const SCREENSHOT_GAP = 4;
+	const AUDIO_FREQUENCY = 880;
+	const AUDIO_GAIN = 0.3;
+	const AUDIO_GAIN_MIN = 0.001;
+	const AUDIO_DURATION = 0.15;
+	const AUDIO_PING_INTERVAL = 0.18;
+
+	// Font sizes for screenshot labels
+	const ROOT_LABEL_FONT_SIZE = '18px';
+	const COUNTS_LABEL_FONT_SIZE = '12.5px';
+	const INDEX_LABEL_FONT_SIZE = '12.5px';
+	const LABEL_SECTION_FONT_SIZE = '11px';
+	const BUTTON_FONT_SIZE_PX = '9px';
+
+	// Layout
+	const WORD_GAP_SIZE = 15;
+	const LABEL_HEIGHT_MULTIPLIER = 1.4;
+	const ROOT_SEPARATOR = ' · ';
+
+	// Regex patterns
+	const PAUSE_MARKS_REGEX = /[ۖۗۘۙۚۛۜ۩۞]/g;
+
+	// Fixed word corrections (cosmetic fixes, not in database)
+	const FIXED_MUSHAF_WORDS = {
+		'13:37:8': 'ﱿ', // 6th line last word - Ba'da
+		'13:37:9': 'ﲀﲁ' // 7th line first word - Ma Ja'aka
+	};
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// PROPS & DERIVED VALUES
+	// ═══════════════════════════════════════════════════════════════════════════
+
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
 	const verse = key.split(':')[1];
@@ -26,18 +89,40 @@
 	const transliterationWords = value.words.transliteration;
 	const translationWords = value.words.translation;
 
-	// fix for Ba'da Ma Ja'aka for page 254
-	// since it's just a cosmetic change, there's no need of changing it at database level
-	const fixedMushafWords = {
-		'13:37:8': 'ﱿ', // 6th line last word - Ba'da
-		'13:37:9': 'ﲀﲁ' // 7th line first word - Ma Ja'aka
-	};
+	// ═══════════════════════════════════════════════════════════════════════════
+	// BUTTON CONFIGURATIONS
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	const topLeftButtons = [
+		{ icon: '⭐', bg: BUTTON_COLOR_LIGHT_BLUE },
+		{ icon: '🔖', bg: BUTTON_COLOR_PLUM }
+	];
+
+	const cornerButtons = [
+		{ 
+			icon: '◀', 
+			position: 'bottom-0 left-0',  
+			rounded: 'rounded-tr', 
+			bg: BUTTON_COLOR_LIGHT_BLUE, 
+			onClick: (word) => selectAdjacentWord(word, +1) 
+		},
+		{ 
+			icon: '▶', 
+			position: 'bottom-0 right-0', 
+			rounded: 'rounded-tl', 
+			bg: BUTTON_COLOR_LIGHT_BLUE, 
+			onClick: (word) => selectAdjacentWord(word, -1) 
+		}
+	];
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// REACTIVE DECLARATIONS
+	// ═══════════════════════════════════════════════════════════════════════════
 
 	$: displayIsContinuous = selectableDisplays[$__displayType].continuous;
 
-	// Dynamically load the fonts if mushaf fonts are selected
-	//v4 words are hidden by default and shown only when the font is loaded...
-	if ([2, 3].includes($__fontType)) {
+	// Dynamically load fonts for mushaf display
+	if (MUSHAF_FONT_TYPES.includes($__fontType)) {
 		loadFont(`p${value.meta.page}`, getMushafWordFontLink(value.meta.page)).then(() => {
 			document.querySelectorAll(`.p${value.meta.page}`).forEach((element) => {
 				element.classList.remove('invisible');
@@ -46,32 +131,18 @@
 	}
 
 	/**
-	 * Handles click interactions on words or verse-end icons depending on the current page and context.
-	 *
-	 * Behavior:
-	 * 1. **Morphology Page + Word Click**:
-	 *    - Sets the selected morphology key and navigates to the word's morphology details.
-	 *
-	 * 2. **Other Pages + Word Click (if word-level morphology is enabled or modal is visible)**:
-	 *    - Opens the morphology modal for the clicked word and sets the selected morphology key.
-	 *
-	 * 3. **General Case**:
-	 *    - Sets the verse key for tracking purposes.
-	 *    - If a word is clicked:
-	 *      - Triggers audio playback for that specific word.
-	 *    - If an end-verse icon is clicked:
-	 *      - Adds a bookmark (if continuous display is disabled).
+	 * Handles click interactions on words or verse-end icons.
+	 * Routes to morphology, modal, audio, or bookmarks based on context.
 	 */
 	function wordClickHandler(props) {
-		if ($__currentPage === 'morphology' && props.type === 'word') {
+		if ($__currentPage === PAGE_MORPHOLOGY && props.type === 'word') {
 			__morphologyKey.set(props.key);
 			goto(`/morphology?word=${props.key}`, { replaceState: false });
-		} else if ((!['morphology', 'mushaf'].includes($__currentPage) && props.type === 'word' && $__wordMorphologyOnClick) || $__morphologyModalVisible) {
+		} else if ((![ PAGE_MORPHOLOGY, PAGE_MUSHAF].includes($__currentPage) && props.type === 'word' && $__wordMorphologyOnClick) || $__morphologyModalVisible) {
 			__morphologyKey.set(props.key);
 			__morphologyModalVisible.set(true);
 		} else {
 			__verseKey.set(props.key);
-
 			if (props.type === 'word') {
 				wordAudioController({
 					key: props.key,
@@ -90,103 +161,130 @@
 		}
 	}
 
-	// Common classes for words and end icons
-	$: wordAndEndIconCommonClasses = `
-		hover:cursor-pointer
-		${window.theme('hover')}
-		${$__displayType === 1 ? 'text-center flex flex-col' : 'inline-flex flex-col'}
-		${selectableDisplays[$__displayType].layout === 'wbw' ? 'px-3 py-2' : [2, 3].includes($__fontType) ? ($__currentPage === 'mushaf' ? 'p-0' : 'px-0 py-2') : 'px-1 py-2'}
-		${exampleVerse && '!p-0'}
-	`;
+	// ═══════════════════════════════════════════════════════════════════════════
+	// STYLE GENERATION HELPERS
+	// ═══════════════════════════════════════════════════════════════════════════
 
-	// Classes for word spans
-	$: wordSpanClasses = `
-		arabicText leading-normal 
-		arabic-font-${$__fontType} 
-		${$__currentPage !== 'mushaf' && fontSizes.arabicText} 
-		${displayIsContinuous && 'inline-block'}
-		${$__fontType === 9 && 'pb-4'}
-	`;
+	function getWordAndEndIconClasses() {
+		return `
+			hover:cursor-pointer
+			${window.theme('hover')}
+			${$__displayType === 1 ? 'text-center flex flex-col' : 'inline-flex flex-col'}
+			${selectableDisplays[$__displayType].layout === 'wbw' ? 'px-3 py-2' : MUSHAF_FONT_TYPES.includes($__fontType) ? ($__currentPage === PAGE_MUSHAF ? 'p-0' : 'px-0 py-2') : 'px-1 py-2'}
+			${exampleVerse && '!p-0'}
+		`;
+	}
 
-	// Classes for v4 Hafs words:
-	// 1. Special Firefox + Dark theme cases:
-	//    - If font type is 3 (Tajweed) → apply "hafs-palette-firefox-dark"
-	//      (fixes Firefox-specific rendering issues).
-	//    - If font type is 2 (Non-Tajweed) → no palette applied (leave empty).
-	//
-	// 2. Otherwise (all non-Firefox or other cases):
-	//    - If font type is 3 → apply "theme-palette-tajweed" (tajweed font coloring).
-	//    - Else → apply "theme-palette-normal" (default palette).
-	//    - If font type is 2 and theme is 5 (Mocha Night) → add "mocha-night-font-color".
-	//    - If font type is 2 and theme is 9 (Dark Luxury) → add "dark-luxury-font-color".
-	//
-	// Summary:
-	// - Firefox + dark theme overrides the palette logic (tajweed → special class, non-tajweed → none).
-	// - All other browsers/themes follow the normal font-type and theme-based palettes.
-	$: v4hafsClasses = `
-		invisible v4-words 
-		p${value.meta.page} 
-		${
-			isFirefoxDarkTajweed()
-				? 'hafs-palette-firefox-dark'
-				: isFirefoxDarkNonTajweed()
-					? ''
-					: `
-						${$__fontType === 3 ? 'theme-palette-tajweed' : 'theme-palette-normal'}
-						${$__fontType === 2 && $__websiteTheme === 5 ? 'mocha-night-font-color' : ''}
-						${$__fontType === 2 && $__websiteTheme === 9 ? 'dark-luxury-font-color' : ''}
-					`
+	function getWordSpanClasses() {
+		return `
+			arabicText leading-normal 
+			arabic-font-${$__fontType} 
+			${$__currentPage !== PAGE_MUSHAF && fontSizes.arabicText} 
+			${displayIsContinuous && 'inline-block'}
+			${$__fontType === FONT_TYPE_SPECIAL && 'pb-4'}
+		`;
+	}
+
+	function getV4HafsClasses() {
+		const baseClasses = `invisible v4-words p${value.meta.page}`;
+		
+		if (isFirefoxDarkTajweed()) {
+			return `${baseClasses} hafs-palette-firefox-dark`;
+		} 
+		if (isFirefoxDarkNonTajweed()) {
+			return baseClasses;
 		}
-	`;
 
-	// Classes for end icons
-	// In Golden Glint theme, the end icon should be gold
-	$: endIconClasses = `
-		rounded-lg 
-		${wordAndEndIconCommonClasses}
-		${$__websiteTheme === 1 && `${window.theme('textSecondary')}`}
-	`;
+		const paletteClass = $__fontType === FONT_TYPE_TAJWEED ? 'theme-palette-tajweed' : 'theme-palette-normal';
+		const themeClass = $__fontType === FONT_TYPE_NON_TAJWEED && $__websiteTheme === THEME_MOCHA_NIGHT 
+			? 'mocha-night-font-color' 
+			: $__fontType === FONT_TYPE_NON_TAJWEED && $__websiteTheme === THEME_DARK_LUXURY 
+				? 'dark-luxury-font-color' 
+				: '';
 
-	// Classes for word translation and transliteration
-	$: wordTranslationClasses = `
-		wordTranslationText flex flex-col direction-ltr
-		${fontSizes.wordTranslationText}
-		theme
-	`;
-
-	// Function to check if word should be displayed
-	function shouldDisplayWord(wordIndex) {
-		return $__currentPage !== 'mushaf' || ($__currentPage === 'mushaf' && +value.words.line[wordIndex] === line);
+		return `${baseClasses} ${paletteClass} ${themeClass}`;
 	}
 
-	// Function to get word key
-	function getWordKey(wordIndex) {
-		return `${chapter}:${verse}:${wordIndex + 1}`;
+	function getEndIconClasses() {
+		const commonClasses = getWordAndEndIconClasses();
+		const themeClass = $__websiteTheme === THEME_GOLDEN_GLINT ? window.theme('textSecondary') : '';
+		return `rounded-lg ${commonClasses} ${themeClass}`;
 	}
 
+	function getWordTranslationClasses() {
+		return `
+			wordTranslationText flex flex-col direction-ltr
+			${fontSizes.wordTranslationText}
+			theme
+		`;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// STATE & DATA
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// Hover states
 	let hoveredWordKey = null;
 	let hoveredButtonKey = null;
+
+	// Word selection for multi-word screenshots
 	let startWordIndex = null;
 	let stopWordIndex = null;
 	let anchorWordIndex = null;
 
-	// ── Word button config ──────────────────────────────────────────────────────
-	// Top-left pair: rendered side by side in a shared flex wrapper.
-	const topLeftButtons = [
-		{ icon: '⭐', bg: '#B0E0E6' },
-		{ icon: '🔖', bg: '#DDA0DD' }
-	];
-
-	// Individual corner buttons. Modify icon / bg / position / rounded freely.
-	const cornerButtons = [
-		{ icon: '◀', position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: '#B0E0E6', onClick: (word) => selectAdjacentWord(word, +1) },
-		{ icon: '▶', position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: '#B0E0E6', onClick: (word) => selectAdjacentWord(word, -1) }
-	];
-	// ────────────────────────────────────────────────────────────────────────────
-
+	// Morphology data caches
 	let rootDataMap = {};
 	let sameRootMap = {};
 	let exactWordsMap = {};
+
+	// Highlighted words from word knowledge store
+	let highlightedWordIndices = new Set();
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// REACTIVE SIDE EFFECTS & COMPUTED VALUES
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	// Recompute class strings when dependencies change
+	let wordAndEndIconCommonClasses = '';
+	let wordSpanClasses = '';
+	let v4hafsClasses = '';
+	let endIconClasses = '';
+	let wordTranslationClasses = '';
+
+	$: {
+		wordAndEndIconCommonClasses = getWordAndEndIconClasses();
+		wordSpanClasses = getWordSpanClasses();
+		v4hafsClasses = getV4HafsClasses();
+		endIconClasses = getEndIconClasses();
+		wordTranslationClasses = getWordTranslationClasses();
+	}
+
+	// Update highlighted indices when word knowledge changes
+	$: {
+		const knowledgeArabicSet = new Set($__wordKnowledge.flatMap((e) => e.arabic.split(' ')));
+		highlightedWordIndices = new Set(
+			arabicWords.reduce((acc, w, i) => {
+				if (knowledgeArabicSet.has(w)) acc.push(i + 1); // 1-based
+				return acc;
+			}, [])
+		);
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// UTILITY FUNCTIONS
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	function shouldDisplayWord(wordIndex) {
+		return $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && +value.words.line[wordIndex] === line);
+	}
+
+	function getWordKey(wordIndex) {
+		return `${chapter}:${verse}:${wordIndex + 1}`;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// MORPHOLOGY DATA FUNCTIONS
+	// ═══════════════════════════════════════════════════════════════════════════
 
 	onMount(async () => {
 		const [rootRes, sameRootRes, exactRes] = await Promise.all([
@@ -202,223 +300,23 @@
 	function formatRoot(wordKey) {
 		const root = rootDataMap[wordKey]?.[1];
 		if (!root) return null;
-		return Array.from(root).join(' · ');
+		return Array.from(root).join(ROOT_SEPARATOR);
 	}
-
-	const pauseMarksRegex = /[ۖۗۘۙۚۛۜ۩۞]/g;
 
 	function getWordCounts(wordKey) {
 		const meta = rootDataMap[wordKey];
 		if (!Array.isArray(meta)) return null;
 		const root = meta[1];
-		const uthmani = meta[0]?.replace(pauseMarksRegex, '');
+		const uthmani = meta[0]?.replace(PAUSE_MARKS_REGEX, '');
 		const rootCount = root ? (sameRootMap[root]?.length ?? 0) : 0;
 		const exactCount = uthmani ? (exactWordsMap[uthmani]?.length ?? 0) : 0;
 		if (!rootCount && !exactCount) return null;
 		return { rootCount, exactCount };
 	}
 
-	async function screenshotWord(wordKey) {
-		// Audio ping on click (double ping if Telegram is enabled)
-		const ctx = new AudioContext();
-		const pingCount = PUBLIC_TELEGRAM_ENABLED === 'true' ? 2 : 1;
-		for (let i = 0; i < pingCount; i++) {
-			const osc = ctx.createOscillator();
-			const gain = ctx.createGain();
-			osc.connect(gain);
-			gain.connect(ctx.destination);
-			osc.frequency.value = 880;
-			const t = ctx.currentTime + i * 0.18;
-			gain.gain.setValueAtTime(0.3, t);
-			gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-			osc.start(t);
-			osc.stop(t + 0.15);
-		}
-
-		const html2canvas = (await import('html2canvas')).default;
-		const pad = 8;
-
-		if (startWordIndex !== null) {
-			// ── Multi-word screenshot ─────────────────────────────────────────────
-			// Collect anchor + all highlighted words, sorted ascending by word index.
-			// direction:rtl on the flex row makes word 1 appear rightmost — correct Arabic order.
-			// Build sorted key list from range [startWordIndex, stopWordIndex] + anchor
-			const rangeIndices = new Set();
-			for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
-			rangeIndices.add(anchorWordIndex);
-			const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
-
-			const wordRow = document.createElement('div');
-			wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:4px;';
-
-			sortedKeys.forEach((key) => {
-				const el = document.getElementById(key);
-				const clone = el.cloneNode(true);
-				clone.querySelectorAll('[data-screenshot-exclude]').forEach((e) => e.remove());
-				clone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
-				clone.classList.remove('ring-2', 'ring-blue-400', 'ring-red-400');
-				clone.style.cssText += 'position:relative;flex:0 0 auto;gap:15px;';
-
-				const root = formatRoot(key);
-				if (root) {
-					const rootLabel = document.createElement('span');
-					rootLabel.textContent = root;
-					rootLabel.style.cssText = 'font-size:18px;font-weight:bold;color:#222;font-family:serif;direction:rtl;';
-					clone.appendChild(rootLabel);
-
-					const counts = getWordCounts(key);
-					if (counts) {
-						const countsLabel = document.createElement('span');
-						countsLabel.textContent = `${counts.rootCount} / ${counts.exactCount}`;
-						countsLabel.style.cssText = 'font-size:12.5px;color:#555;font-family:sans-serif;';
-						clone.appendChild(countsLabel);
-					}
-				}
-
-				wordRow.appendChild(clone);
-			});
-
-			const label = document.createElement('div');
-			const startNum = startWordIndex + 1;
-			const stopNum = stopWordIndex + 1;
-			label.textContent = startNum === stopNum
-				? `${chapter}:${verse}  word ${startNum}`
-				: `${chapter}:${verse}  words ${startNum}–${stopNum}`;
-			label.style.cssText = 'text-align:center;font-size:11px;color:#555;font-family:sans-serif;margin-top:4px;';
-
-			const wrapper = document.createElement('div');
-			wrapper.style.cssText = `position:fixed;top:-9999px;left:-9999px;background:#F4F0E4;padding:${pad}px;display:flex;flex-direction:column;align-items:center;`;
-			wrapper.appendChild(wordRow);
-			wrapper.appendChild(label);
-
-			document.body.appendChild(wrapper);
-			const canvas = await html2canvas(wrapper);
-			document.body.removeChild(wrapper);
-
-			const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
-			const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-			const dataUrl = canvas.toDataURL('image/png');
-			await fetch('/api/save-screenshot', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ filename, dataUrl })
-			});
-			const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
-			const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
-			const translationText = sortedKeys.map((k) => translationWords[parseInt(k.split(':')[2]) - 1]).join(' ');
-			const roots = sortedKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
-			{
-				const wkRes = await fetch('/api/word-knowledge', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						surah: parseInt(chapter),
-						ayah: parseInt(verse),
-						startWordIndex: Math.min(...wordIndices),
-						endWordIndex: Math.max(...wordIndices),
-						arabic: arabicText,
-						translation: translationText,
-						root: roots.length ? roots.join(' / ') : null
-					})
-				});
-				const { entry: wkEntry } = await wkRes.json();
-				syncWordKnowledgeEntry(wkEntry);
-			}
-			console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
-			return;
-		}
-
-		// ── Single-word screenshot (existing behaviour) ───────────────────────────
-		const wordEl = document.getElementById(wordKey);
-
-		// Find the associated tooltip sibling (role="tooltip")
-		let tooltipEl = wordEl.nextElementSibling;
-		while (tooltipEl && tooltipEl.getAttribute('role') !== 'tooltip') {
-			tooltipEl = tooltipEl.nextElementSibling;
-		}
-
-		const wordRect = wordEl.getBoundingClientRect();
-		const totalW = wordRect.width + pad * 2;
-		const totalH = wordRect.height + pad * 2;
-
-		// Fetch root letters for this word
-		const rootData = await fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology');
-		const root = rootData?.data?.[wordKey]?.[1] ?? null;
-
-		// Isolated off-screen container — only our clones live here, no bleed
-		const wordClone = wordEl.cloneNode(true);
-		wordClone.querySelectorAll('[data-screenshot-exclude]').forEach(el => el.remove());
-		wordClone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
-
-		const counts = getWordCounts(wordKey);
-
-		if (root) {
-			const rootLabel = document.createElement('span');
-			rootLabel.textContent = Array.from(root).join(' · ');
-			rootLabel.style.cssText = 'font-size:18px;font-weight:bold;color:#222;font-family:serif;direction:rtl;';
-			wordClone.appendChild(rootLabel);
-
-			if (counts) {
-				const countsLabel = document.createElement('span');
-				countsLabel.textContent = `${counts.rootCount} / ${counts.exactCount}`;
-				countsLabel.style.cssText = 'font-size:12.5px;color:#555;font-family:sans-serif;';
-				wordClone.appendChild(countsLabel);
-			}
-		}
-
-		const wordIndexLabel = document.createElement('span');
-		wordIndexLabel.textContent = wordKey;
-		wordIndexLabel.style.cssText = 'font-size:12.5px;color:#222;font-family:sans-serif;';
-		wordClone.appendChild(wordIndexLabel);
-
-		wordClone.style.position = 'absolute';
-
-		const gapSize = 15;
-		wordClone.style.gap = `${gapSize}px`;
-
-		// Extra height: gaps between all children + the added labels' line heights
-		const labelHeight = Math.ceil(12.5 * 1.4);
-		const addedLabels = root ? (counts ? 3 : 2) : 1;
-		const extraH = Math.max(0, wordClone.children.length - 1) * gapSize + labelHeight * addedLabels;
-
-		const container = document.createElement('div');
-		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:#F4F0E4;`;
-
-		wordClone.style.left = `${pad}px`;
-		wordClone.style.top = `${pad}px`;
-		container.appendChild(wordClone);
-
-		document.body.appendChild(container);
-		const canvas = await html2canvas(container);
-		document.body.removeChild(container);
-
-		const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-		const dataUrl = canvas.toDataURL('image/png');
-		await fetch('/api/save-screenshot', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl })
-		});
-		const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
-		{
-			const wkRes = await fetch('/api/word-knowledge', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					surah: parseInt(chapter),
-					ayah: parseInt(verse),
-					startWordIndex: _wIdx + 1,
-					endWordIndex: _wIdx + 1,
-					arabic: arabicWords[_wIdx],
-					translation: translationWords[_wIdx],
-					root: rootDataMap[wordKey]?.[1] ?? null
-				})
-			});
-			const { entry: wkEntry } = await wkRes.json();
-			syncWordKnowledgeEntry(wkEntry);
-		}
-		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
-	}
+	// ═══════════════════════════════════════════════════════════════════════════
+	// WORD SELECTION & HIGHLIGHTING
+	// ═══════════════════════════════════════════════════════════════════════════
 
 	function selectAdjacentWord(currentWordIndex, direction) {
 		anchorWordIndex = currentWordIndex;
@@ -450,21 +348,6 @@
 		anchorWordIndex = null;
 	}
 
-	// Highlighted word indices (1-based) for this verse.
-	// Match by Arabic text: any position whose arabicWords entry appears in the knowledge store.
-	// Multi-word entries (arabic joined with spaces) are split so each individual form is matched.
-	let highlightedWordIndices = new Set();
-	$: {
-		const knowledgeArabicSet = new Set($__wordKnowledge.flatMap((e) => e.arabic.split(' ')));
-		highlightedWordIndices = new Set(
-			arabicWords.reduce((acc, w, i) => {
-				if (knowledgeArabicSet.has(w)) acc.push(i + 1); // 1-based
-				return acc;
-			}, [])
-		);
-	}
-
-	// Sync a returned entry into the client store so highlights update immediately
 	function syncWordKnowledgeEntry(entry) {
 		__wordKnowledge.update((words) => {
 			const idx = words.findIndex(
@@ -481,6 +364,204 @@
 			}
 			return [...words, entry];
 		});
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// SCREENSHOT UTILITIES (Audio + DOM Manipulation)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	function playScreenshotPing() {
+		const ctx = new AudioContext();
+		const pingCount = PUBLIC_TELEGRAM_ENABLED === 'true' ? 2 : 1;
+		for (let i = 0; i < pingCount; i++) {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.frequency.value = AUDIO_FREQUENCY;
+			const t = ctx.currentTime + i * AUDIO_PING_INTERVAL;
+			gain.gain.setValueAtTime(AUDIO_GAIN, t);
+			gain.gain.exponentialRampToValueAtTime(AUDIO_GAIN_MIN, t + AUDIO_DURATION);
+			osc.start(t);
+			osc.stop(t + AUDIO_DURATION);
+		}
+	}
+
+	function createRootLabel(root) {
+		const label = document.createElement('span');
+		label.textContent = Array.from(root).join(ROOT_SEPARATOR);
+		label.style.cssText = `font-size:${ROOT_LABEL_FONT_SIZE};font-weight:bold;color:${COLOR_ROOT_TEXT};font-family:${COLOR_ROOT_LABEL_FONT};direction:rtl;`;
+		return label;
+	}
+
+	function createCountsLabel(counts) {
+		const label = document.createElement('span');
+		label.textContent = `${counts.rootCount} / ${counts.exactCount}`;
+		label.style.cssText = `font-size:${COUNTS_LABEL_FONT_SIZE};color:${COLOR_MUTED_TEXT};font-family:sans-serif;`;
+		return label;
+	}
+
+	function cloneWordElement(wordKey) {
+		const el = document.getElementById(wordKey);
+		const clone = el.cloneNode(true);
+		clone.querySelectorAll('[data-screenshot-exclude]').forEach((e) => e.remove());
+		clone.querySelector('.arabicText').style.setProperty('color', 'green', 'important');
+		clone.classList.remove('ring-2', 'ring-blue-400', 'ring-red-400');
+		clone.style.cssText += 'position:relative;flex:0 0 auto;gap:' + WORD_GAP_SIZE + 'px;';
+		return clone;
+	}
+
+	async function captureWordVisualsToCanvas(container) {
+		const html2canvas = (await import('html2canvas')).default;
+		document.body.appendChild(container);
+		const canvas = await html2canvas(container);
+		document.body.removeChild(container);
+		return canvas;
+	}
+
+	async function sendScreenshotToServer(filename, canvas) {
+		const dataUrl = canvas.toDataURL('image/png');
+		await fetch('/api/save-screenshot', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filename, dataUrl })
+		});
+	}
+
+	async function sendWordKnowledgeData(surah, ayah, startIdx, endIdx, arabic, translation, root) {
+		const response = await fetch('/api/word-knowledge', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				surah,
+				ayah,
+				startWordIndex: startIdx,
+				endWordIndex: endIdx,
+				arabic,
+				translation,
+				root
+			})
+		});
+		const { entry: wkEntry } = await response.json();
+		syncWordKnowledgeEntry(wkEntry);
+	}
+
+	async function screenshotMultipleWords() {
+		const rangeIndices = new Set();
+		for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
+		rangeIndices.add(anchorWordIndex);
+		const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+
+		const wordRow = document.createElement('div');
+		wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:' + SCREENSHOT_GAP + 'px;';
+
+		sortedKeys.forEach((key) => {
+			const clone = cloneWordElement(key);
+			const root = formatRoot(key);
+			if (root) {
+				clone.appendChild(createRootLabel(root));
+				const counts = getWordCounts(key);
+				if (counts) clone.appendChild(createCountsLabel(counts));
+			}
+			wordRow.appendChild(clone);
+		});
+
+		const startNum = startWordIndex + 1;
+		const stopNum = stopWordIndex + 1;
+		const label = document.createElement('div');
+		label.textContent = startNum === stopNum
+			? `${chapter}:${verse}  word ${startNum}`
+			: `${chapter}:${verse}  words ${startNum}–${stopNum}`;
+		label.style.cssText = `text-align:center;font-size:${LABEL_SECTION_FONT_SIZE};color:${COLOR_MUTED_TEXT};font-family:sans-serif;margin-top:4px;`;
+
+		const wrapper = document.createElement('div');
+		wrapper.style.cssText = `position:fixed;top:-9999px;left:-9999px;background:${COLOR_BACKGROUND_SCREENSHOT};padding:${SCREENSHOT_PAD}px;display:flex;flex-direction:column;align-items:center;`;
+		wrapper.appendChild(wordRow);
+		wrapper.appendChild(label);
+
+		const canvas = await captureWordVisualsToCanvas(wrapper);
+
+		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
+		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
+		await sendScreenshotToServer(filename, canvas);
+
+		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
+		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
+		const translationText = sortedKeys.map((k) => translationWords[parseInt(k.split(':')[2]) - 1]).join(' ');
+		const roots = sortedKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
+
+		await sendWordKnowledgeData(
+			parseInt(chapter),
+			parseInt(verse),
+			Math.min(...wordIndices),
+			Math.max(...wordIndices),
+			arabicText,
+			translationText,
+			roots.length ? roots.join(' / ') : null
+		);
+
+		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+	}
+
+	async function screenshotSingleWord(wordKey) {
+		const wordEl = document.getElementById(wordKey);
+		const wordRect = wordEl.getBoundingClientRect();
+		const totalW = wordRect.width + SCREENSHOT_PAD * 2;
+		const totalH = wordRect.height + SCREENSHOT_PAD * 2;
+
+		const wordClone = cloneWordElement(wordKey);
+		const root = rootDataMap[wordKey]?.[1] ?? null;
+		const counts = getWordCounts(wordKey);
+
+		if (root) {
+			wordClone.appendChild(createRootLabel(root));
+			if (counts) wordClone.appendChild(createCountsLabel(counts));
+		}
+
+		const indexLabel = document.createElement('span');
+		indexLabel.textContent = wordKey;
+		indexLabel.style.cssText = `font-size:${INDEX_LABEL_FONT_SIZE};color:${COLOR_ROOT_TEXT};font-family:sans-serif;`;
+		wordClone.appendChild(indexLabel);
+
+		wordClone.style.position = 'absolute';
+		wordClone.style.gap = WORD_GAP_SIZE + 'px';
+
+		const labelHeight = Math.ceil(parseFloat(INDEX_LABEL_FONT_SIZE) * LABEL_HEIGHT_MULTIPLIER);
+		const addedLabels = root ? (counts ? 3 : 2) : 1;
+		const extraH = Math.max(0, wordClone.children.length - 1) * WORD_GAP_SIZE + labelHeight * addedLabels;
+
+		const container = document.createElement('div');
+		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:${COLOR_BACKGROUND_SCREENSHOT};`;
+
+		wordClone.style.left = SCREENSHOT_PAD + 'px';
+		wordClone.style.top = SCREENSHOT_PAD + 'px';
+		container.appendChild(wordClone);
+
+		const canvas = await captureWordVisualsToCanvas(container);
+		const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
+		await sendScreenshotToServer(filename, canvas);
+
+		const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
+		await sendWordKnowledgeData(
+			parseInt(chapter),
+			parseInt(verse),
+			_wIdx + 1,
+			_wIdx + 1,
+			arabicWords[_wIdx],
+			translationWords[_wIdx],
+			rootDataMap[wordKey]?.[1] ?? null
+		);
+
+		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+	}
+
+	async function screenshotWord(wordKey) {
+		playScreenshotPing();
+		if (startWordIndex !== null) {
+			await screenshotMultipleWords();
+		} else {
+			await screenshotSingleWord(wordKey);
+		}
 	}
 </script>
 
@@ -564,14 +645,14 @@
 
 			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 				<!-- Everything except Mushaf fonts -->
-				{#if ![2, 3].includes($__fontType)}
+				{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
 					{arabicWords[word]}
 					<!-- Mushaf fonts -->
 				{:else}
 					<span id="word-{wordKey.split(':')[1]}-{wordKey.split(':')[2]}" style="font-family: p{value.meta.page}" class={v4hafsClasses}>
-						<!-- word fix, see fixedMushafWords -->
-						{#if Object.prototype.hasOwnProperty.call(fixedMushafWords, wordKey)}
-							{fixedMushafWords[wordKey]}
+						<!-- word fix, see FIXED_MUSHAF_WORDS -->
+						{#if Object.prototype.hasOwnProperty.call(FIXED_MUSHAF_WORDS, wordKey)}
+							{FIXED_MUSHAF_WORDS[wordKey]}
 						{:else}
 							{arabicWords[word]}
 						{/if}
@@ -580,7 +661,7 @@
 			</span>
 
 			<!-- word translation and transliteration, only for wbw modes -->
-			{#if [1, 3, 7].includes($__displayType)}
+			{#if WBW_DISPLAY_TYPES.includes($__displayType)}
 				<div class={wordTranslationClasses} data-fontSize={fontSizes.wordTranslationText}>
 					<span class="leading-normal {selectableWordTransliterations[$__wordTransliteration].font} {$__wordTransliterationEnabled ? 'block' : 'hidden'}">{transliterationWords[word]}</span>
 					<span class="leading-normal {selectableWordTranslations[$__wordTranslation].font} {$__wordTranslationEnabled ? 'block' : 'hidden'}">
@@ -610,13 +691,13 @@
 {/each}
 
 <!-- end icon -->
-{#if $__currentPage !== 'mushaf' || ($__currentPage === 'mushaf' && value.words.line[value.words.line.length - 1] === line)}
+{#if $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && value.words.line[value.words.line.length - 1] === line)}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })}>
 		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 			<!-- Everything except Mushaf fonts -->
-			{#if ![2, 3].includes($__fontType)}
+			{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
 				<span class="colored-fonts">{value.words.end}</span>
 				<!-- Mushaf fonts -->
 			{:else}
