@@ -389,7 +389,7 @@
 
 	function createRootLabel(root) {
 		const label = document.createElement('span');
-		label.textContent = Array.from(root).join(ROOT_SEPARATOR);
+		label.textContent = root;
 		label.style.cssText = `font-size:${ROOT_LABEL_FONT_SIZE};font-weight:bold;color:${COLOR_ROOT_TEXT};font-family:${COLOR_ROOT_LABEL_FONT};direction:rtl;`;
 		return label;
 	}
@@ -446,25 +446,47 @@
 		syncWordKnowledgeEntry(wkEntry);
 	}
 
-	async function screenshotMultipleWords() {
-		const rangeIndices = new Set();
-		for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
-		rangeIndices.add(anchorWordIndex);
-		const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+	// helper used by both single- and multi-word screenshots
+// returns a clone element with its additional labels appended (vertical stacking maintained)
+function buildScreenshotElement(wordKey, includeIndex = false) {
+	const clone = cloneWordElement(wordKey);
 
-		const wordRow = document.createElement('div');
-		wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:' + SCREENSHOT_GAP + 'px;';
+	// root label
+	const root = formatRoot(wordKey);
+	if (root) {
+		clone.appendChild(createRootLabel(root));
+	}
 
-		sortedKeys.forEach((key) => {
-			const clone = cloneWordElement(key);
-			const root = formatRoot(key);
-			if (root) {
-				clone.appendChild(createRootLabel(root));
-				const counts = getWordCounts(key);
-				if (counts) clone.appendChild(createCountsLabel(counts));
-			}
-			wordRow.appendChild(clone);
-		});
+	// counts label
+	const counts = getWordCounts(wordKey);
+	if (counts) {
+		clone.appendChild(createCountsLabel(counts));
+	}
+
+	// optional index
+	if (includeIndex) {
+		const idx = document.createElement('span');
+		idx.textContent = wordKey;
+		idx.style.cssText = `font-size:${INDEX_LABEL_FONT_SIZE};color:${COLOR_ROOT_TEXT};font-family:sans-serif;`;
+		clone.appendChild(idx);
+	}
+
+	return clone;
+} 
+
+async function screenshotMultipleWords() {
+	const rangeIndices = new Set();
+	for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
+	rangeIndices.add(anchorWordIndex);
+	const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+
+	const wordRow = document.createElement('div');
+	wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:' + SCREENSHOT_GAP + 'px;';
+
+	sortedKeys.forEach((key) => {
+		const el = buildScreenshotElement(key); // clone with internal labels
+		wordRow.appendChild(el);
+	});
 
 		const startNum = startWordIndex + 1;
 		const stopNum = stopWordIndex + 1;
@@ -504,56 +526,42 @@
 	}
 
 	async function screenshotSingleWord(wordKey) {
-		const wordEl = document.getElementById(wordKey);
-		const wordRect = wordEl.getBoundingClientRect();
-		const totalW = wordRect.width + SCREENSHOT_PAD * 2;
-		const totalH = wordRect.height + SCREENSHOT_PAD * 2;
+	const wordEl = document.getElementById(wordKey);
+	const wordRect = wordEl.getBoundingClientRect();
+	const totalW = wordRect.width + SCREENSHOT_PAD * 2;
+	const totalH = wordRect.height + SCREENSHOT_PAD * 2;
 
-		const wordClone = cloneWordElement(wordKey);
-		const root = rootDataMap[wordKey]?.[1] ?? null;
-		const counts = getWordCounts(wordKey);
+	// clone element with labels and index
+	const el = buildScreenshotElement(wordKey, true);
+	el.style.position = 'absolute';
 
-		if (root) {
-			wordClone.appendChild(createRootLabel(root));
-			if (counts) wordClone.appendChild(createCountsLabel(counts));
-		}
+	const extraH = Math.max(0, el.children.length - 1) * WORD_GAP_SIZE +
+		Math.ceil(parseFloat(INDEX_LABEL_FONT_SIZE) * LABEL_HEIGHT_MULTIPLIER) * el.children.length;
 
-		const indexLabel = document.createElement('span');
-		indexLabel.textContent = wordKey;
-		indexLabel.style.cssText = `font-size:${INDEX_LABEL_FONT_SIZE};color:${COLOR_ROOT_TEXT};font-family:sans-serif;`;
-		wordClone.appendChild(indexLabel);
+	const container = document.createElement('div');
+	container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:${COLOR_BACKGROUND_SCREENSHOT};`;
 
-		wordClone.style.position = 'absolute';
-		wordClone.style.gap = WORD_GAP_SIZE + 'px';
+	container.appendChild(el);
+	el.style.left = SCREENSHOT_PAD + 'px';
+	el.style.top = SCREENSHOT_PAD + 'px';
 
-		const labelHeight = Math.ceil(parseFloat(INDEX_LABEL_FONT_SIZE) * LABEL_HEIGHT_MULTIPLIER);
-		const addedLabels = root ? (counts ? 3 : 2) : 1;
-		const extraH = Math.max(0, wordClone.children.length - 1) * WORD_GAP_SIZE + labelHeight * addedLabels;
+	const canvas = await captureWordVisualsToCanvas(container);
+	const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
+	await sendScreenshotToServer(filename, canvas);
 
-		const container = document.createElement('div');
-		container.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${totalW}px;height:${totalH + extraH}px;background:${COLOR_BACKGROUND_SCREENSHOT};`;
+	const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
+	await sendWordKnowledgeData(
+		parseInt(chapter),
+		parseInt(verse),
+		_wIdx + 1,
+		_wIdx + 1,
+		arabicWords[_wIdx],
+		translationWords[_wIdx],
+		rootDataMap[wordKey]?.[1] ?? null
+	);
 
-		wordClone.style.left = SCREENSHOT_PAD + 'px';
-		wordClone.style.top = SCREENSHOT_PAD + 'px';
-		container.appendChild(wordClone);
-
-		const canvas = await captureWordVisualsToCanvas(container);
-		const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-		await sendScreenshotToServer(filename, canvas);
-
-		const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
-		await sendWordKnowledgeData(
-			parseInt(chapter),
-			parseInt(verse),
-			_wIdx + 1,
-			_wIdx + 1,
-			arabicWords[_wIdx],
-			translationWords[_wIdx],
-			rootDataMap[wordKey]?.[1] ?? null
-		);
-
-		console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
-	}
+	console.warn(`[Screenshot] Sent to Telegram: ${filename}`);
+}
 
 	async function screenshotWord(wordKey) {
 		playScreenshotPing();
