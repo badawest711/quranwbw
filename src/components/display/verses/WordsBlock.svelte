@@ -8,15 +8,15 @@
 	import Tooltip from '$ui/FlowbiteSvelte/tooltip/Tooltip.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations } from '$data/options';
+	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations, selectableReciters } from '$data/options';
 	import { supplicationsFromQuran } from '$data/quranMeta';
-	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge } from '$utils/stores';
+	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge, __reciter } from '$utils/stores';
 	import { loadFont } from '$utils/loadFont';
 	import { wordAudioController } from '$utils/audioController';
 	import { updateSettings } from '$utils/updateSettings';
 	import { getMushafWordFontLink, isFirefoxDarkNonTajweed, isFirefoxDarkTajweed } from '$utils/getMushafWordFontLink';
 	import { fetchAndCacheJson } from '$utils/fetchData';
-	import { morphologyDataUrls, wordsAudioURL } from '$data/websiteSettings';
+	import { morphologyDataUrls, wordsAudioURL, staticEndpoint } from '$data/websiteSettings';
 	import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -446,13 +446,86 @@
 		return `${wordsAudioURL}/${ch}/${String(ch).padStart(3, '0')}_${String(vs).padStart(3, '0')}_${String(wd).padStart(3, '0')}.mp3?version=2`;
 	}
 
-	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = []) {
+	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audioBase64 = null) {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl, caption, audioUrls })
+			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audioBase64 })
 		});
+	}
+
+	// Fetches the recitation verse audio, slices it to just the selected word range
+	// using timestamp data, and returns a base64-encoded WAV string.
+	// Returns null if the current reciter does not support word-by-word timestamps.
+	async function buildVerseClipBase64(sortedKeys) {
+		const reciter = selectableReciters[$__reciter];
+		if (!reciter?.wbw) return null;
+
+		const ch = parseInt(chapter);
+		const vs = parseInt(verse);
+		const verseAudioUrl = `${reciter.url}/${String(ch).padStart(3, '0')}${String(vs).padStart(3, '0')}.mp3`;
+
+		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
+		const verseTimestampStr = timestampData?.data?.[ch]?.[vs]?.[reciter.id];
+		if (!verseTimestampStr) return null;
+
+		const timestamps = verseTimestampStr.split('|').map(Number);
+
+		// sortedKeys are like "2:5:3" — word number is 1-based; timestamp index is 0-based
+		const firstWordNum = parseInt(sortedKeys[0].split(':')[2]);
+		const lastWordNum = parseInt(sortedKeys[sortedKeys.length - 1].split(':')[2]);
+		const startTime = timestamps[firstWordNum - 1] ?? 0;
+		const endTime = timestamps[lastWordNum] ?? null; // null = clip to audio end
+
+		const verseResp = await fetch(verseAudioUrl);
+		if (!verseResp.ok) return null;
+		const verseArrayBuffer = await verseResp.arrayBuffer();
+
+		const audioCtx = new AudioContext();
+		const audioBuffer = await audioCtx.decodeAudioData(verseArrayBuffer);
+		await audioCtx.close();
+
+		const sampleRate = audioBuffer.sampleRate;
+		const numChannels = audioBuffer.numberOfChannels;
+		const startSample = Math.floor(startTime * sampleRate);
+		const endSample = endTime !== null ? Math.floor(endTime * sampleRate) : audioBuffer.length;
+		const sliceLength = Math.max(0, Math.min(endSample, audioBuffer.length) - startSample);
+
+		// Encode slice as 16-bit PCM WAV
+		const bitsPerSample = 16;
+		const bytesPerSample = bitsPerSample / 8;
+		const dataSize = sliceLength * numChannels * bytesPerSample;
+		const wavBuf = new ArrayBuffer(44 + dataSize);
+		const view = new DataView(wavBuf);
+		const ws = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+
+		ws(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
+		ws(8, 'WAVE'); ws(12, 'fmt '); view.setUint32(16, 16, true);
+		view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
+		view.setUint32(24, sampleRate, true);
+		view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
+		view.setUint16(32, numChannels * bytesPerSample, true);
+		view.setUint16(34, bitsPerSample, true);
+		ws(36, 'data'); view.setUint32(40, dataSize, true);
+
+		let off = 44;
+		for (let i = startSample; i < startSample + sliceLength; i++) {
+			for (let c = 0; c < numChannels; c++) {
+				const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(c)[i]));
+				view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+				off += 2;
+			}
+		}
+
+		// Convert ArrayBuffer → base64
+		const bytes = new Uint8Array(wavBuf);
+		let binary = '';
+		const chunk = 8192;
+		for (let i = 0; i < bytes.length; i += chunk) {
+			binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+		}
+		return btoa(binary);
 	}
 
 	async function sendWordKnowledgeData(surah, ayah, startIdx, endIdx, arabic, translation, root) {
@@ -532,8 +605,9 @@ async function screenshotMultipleWords(caption = '') {
 
 		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		const audioUrls = sortedKeys.map(getWordAudioUrl);
-		await sendScreenshotToServer(filename, canvas, caption, audioUrls);
+		const audioBase64 = await buildVerseClipBase64(sortedKeys);
+		const audioUrls = audioBase64 ? [] : sortedKeys.map(getWordAudioUrl);
+		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audioBase64);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');

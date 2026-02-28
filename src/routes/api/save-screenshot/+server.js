@@ -6,7 +6,7 @@ import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 export async function POST({ request }) {
 	try {
-		const { filename, dataUrl, caption = '', audioUrls = [] } = await request.json();
+		const { filename, dataUrl, caption = '', audioUrls = [], audioBase64 = null } = await request.json();
 		const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
 		const buffer = Buffer.from(base64, 'base64');
 
@@ -32,11 +32,25 @@ export async function POST({ request }) {
 			const result = await res.json();
 			if (!result.ok) throw new Error(`Telegram error: ${result.description}`);
 
-			for (const audioUrl of audioUrls) {
+			if (audioBase64) {
+				// Multi-word recitation clip — pre-built WAV from verse audio trimmed to word range
+				const audioBuf = Buffer.from(audioBase64, 'base64');
+				const audioFilename = filename.replace('.png', '.wav');
+				const audioFormData = new FormData();
+				audioFormData.append('chat_id', TELEGRAM_CHAT_ID);
+				audioFormData.append('audio', new Blob([audioBuf], { type: 'audio/wav' }), audioFilename);
+				const audioRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
+					method: 'POST',
+					body: audioFormData
+				});
+				const audioResult = await audioRes.json();
+				if (!audioResult.ok) throw new Error(`Telegram audio error: ${audioResult.description}`);
+			} else if (audioUrls.length === 1) {
+				// Single word — send by URL directly
 				const audioRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, audio: audioUrl })
+					body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, audio: audioUrls[0] })
 				});
 				const audioResult = await audioRes.json();
 				if (!audioResult.ok) throw new Error(`Telegram audio error: ${audioResult.description}`);
