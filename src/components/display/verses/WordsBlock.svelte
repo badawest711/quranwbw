@@ -516,7 +516,7 @@
 		const sliceLength = Math.max(0, Math.min(endSample, audioBuffer.length) - startSample);
 
 		// Encode slice as MP3 via lamejs
-		const { Mp3Encoder } = await import('lamejs');
+		const { Mp3Encoder } = await import('@breezystack/lamejs');
 		const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
 		const pcmToInt16 = (f32) => Math.max(-32768, Math.min(32767, f32 < 0 ? f32 * 32768 : f32 * 32767));
 
