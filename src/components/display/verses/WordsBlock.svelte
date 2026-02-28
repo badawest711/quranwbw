@@ -33,6 +33,8 @@
 	const THEME_DARK_LUXURY = 9;
 	const THEME_GOLDEN_GLINT = 1;
 
+	const RECITERS_FOR_AUDIO = ["Mishary Rashid Alafasy", "Mahmoud Khalil Al-Husary", "Abdul Basit (Murattal)"];
+
 	// Pages
 	const PAGE_MORPHOLOGY = 'morphology';
 	const PAGE_MUSHAF = 'mushaf';
@@ -446,30 +448,48 @@
 		return `${wordsAudioURL}/${ch}/${String(ch).padStart(3, '0')}_${String(vs).padStart(3, '0')}_${String(wd).padStart(3, '0')}.mp3?version=2`;
 	}
 
-	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audioBase64 = null) {
+	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audiosBase64 = []) {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audioBase64 })
+			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audiosBase64 })
 		});
 	}
 
-	// Fetches the recitation verse audio, slices it to just the selected word range
-	// using timestamp data, and returns a base64-encoded WAV string.
-	// Returns null if the current reciter does not support word-by-word timestamps.
-	async function buildVerseClipBase64(sortedKeys) {
-		const reciter = selectableReciters[$__reciter];
-		if (!reciter?.wbw) return null;
+	// Converts an ArrayBuffer to a base64 string.
+	function arrayBufferToBase64(buf) {
+		const bytes = new Uint8Array(buf);
+		let binary = '';
+		const chunk = 8192;
+		for (let i = 0; i < bytes.length; i += chunk) {
+			binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+		}
+		return btoa(binary);
+	}
 
+	// Core: fetches verse audio for a specific reciter and either slices it to the word range
+	// (when timestamps exist) or falls back to the full verse MP3.
+	// Returns { base64, format } or null on fetch failure.
+	async function buildVerseClipBase64ForReciter(sortedKeys, reciter) {
 		const ch = parseInt(chapter);
 		const vs = parseInt(verse);
 		const verseAudioUrl = `${reciter.url}/${String(ch).padStart(3, '0')}${String(vs).padStart(3, '0')}.mp3`;
 
 		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
 		const verseTimestampStr = timestampData?.data?.[ch]?.[vs]?.[reciter.id];
-		if (!verseTimestampStr) return null;
 
+		if (!verseTimestampStr) {
+			console.log(`[Audio] ${reciter.reciter} (id:${reciter.id}): no timestamps in timestamps.json → sending full verse MP3`);
+			const resp = await fetch(verseAudioUrl);
+			if (!resp.ok) {
+				console.warn(`[Audio] ${reciter.reciter}: failed to fetch verse audio (HTTP ${resp.status})`);
+				return null;
+			}
+			return { base64: arrayBufferToBase64(await resp.arrayBuffer()), format: 'mp3' };
+		}
+
+		console.log(`[Audio] ${reciter.reciter} (id:${reciter.id}): timestamps found, building sliced MP3 clip`);
 		const timestamps = verseTimestampStr.split('|').map(Number);
 
 		// sortedKeys are like "2:5:3" — word number is 1-based; timestamp index is 0-based
@@ -479,7 +499,10 @@
 		const endTime = timestamps[lastWordNum] ?? null; // null = clip to audio end
 
 		const verseResp = await fetch(verseAudioUrl);
-		if (!verseResp.ok) return null;
+		if (!verseResp.ok) {
+			console.warn(`[Audio] ${reciter.reciter}: failed to fetch verse audio (HTTP ${verseResp.status})`);
+			return null;
+		}
 		const verseArrayBuffer = await verseResp.arrayBuffer();
 
 		const audioCtx = new AudioContext();
@@ -492,40 +515,61 @@
 		const endSample = endTime !== null ? Math.floor(endTime * sampleRate) : audioBuffer.length;
 		const sliceLength = Math.max(0, Math.min(endSample, audioBuffer.length) - startSample);
 
-		// Encode slice as 16-bit PCM WAV
-		const bitsPerSample = 16;
-		const bytesPerSample = bitsPerSample / 8;
-		const dataSize = sliceLength * numChannels * bytesPerSample;
-		const wavBuf = new ArrayBuffer(44 + dataSize);
-		const view = new DataView(wavBuf);
-		const ws = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+		// Encode slice as MP3 via lamejs
+		const { Mp3Encoder } = await import('lamejs');
+		const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
+		const pcmToInt16 = (f32) => Math.max(-32768, Math.min(32767, f32 < 0 ? f32 * 32768 : f32 * 32767));
 
-		ws(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true);
-		ws(8, 'WAVE'); ws(12, 'fmt '); view.setUint32(16, 16, true);
-		view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
-		view.setUint32(24, sampleRate, true);
-		view.setUint32(28, sampleRate * numChannels * bytesPerSample, true);
-		view.setUint16(32, numChannels * bytesPerSample, true);
-		view.setUint16(34, bitsPerSample, true);
-		ws(36, 'data'); view.setUint32(40, dataSize, true);
-
-		let off = 44;
-		for (let i = startSample; i < startSample + sliceLength; i++) {
-			for (let c = 0; c < numChannels; c++) {
-				const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(c)[i]));
-				view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-				off += 2;
-			}
+		const left = new Int16Array(sliceLength);
+		const right = numChannels > 1 ? new Int16Array(sliceLength) : null;
+		const leftData = audioBuffer.getChannelData(0);
+		const rightData = numChannels > 1 ? audioBuffer.getChannelData(1) : null;
+		for (let i = 0; i < sliceLength; i++) {
+			left[i] = pcmToInt16(leftData[startSample + i]);
+			if (right) right[i] = pcmToInt16(rightData[startSample + i]);
 		}
 
-		// Convert ArrayBuffer → base64
-		const bytes = new Uint8Array(wavBuf);
-		let binary = '';
-		const chunk = 8192;
-		for (let i = 0; i < bytes.length; i += chunk) {
-			binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+		const chunkSize = 1152; // lamejs required frame size
+		const mp3Parts = [];
+		for (let i = 0; i < sliceLength; i += chunkSize) {
+			const l = left.subarray(i, i + chunkSize);
+			const r = right ? right.subarray(i, i + chunkSize) : l;
+			const chunk = encoder.encodeBuffer(l, r);
+			if (chunk.length > 0) mp3Parts.push(chunk);
 		}
-		return btoa(binary);
+		const flushed = encoder.flush();
+		if (flushed.length > 0) mp3Parts.push(flushed);
+
+		const mp3Buf = new Uint8Array(mp3Parts.reduce((acc, p) => acc + p.length, 0));
+		let offset = 0;
+		for (const part of mp3Parts) { mp3Buf.set(part, offset); offset += part.length; }
+
+		return { base64: arrayBufferToBase64(mp3Buf.buffer), format: 'mp3' };
+	}
+
+	// Builds an audio entry for each reciter in RECITERS_FOR_AUDIO in parallel.
+	// Returns an array of { name, base64, format } for successful fetches.
+	async function buildAllReciterAudios(sortedKeys) {
+		const reciterObjects = RECITERS_FOR_AUDIO
+			.map((name) => Object.values(selectableReciters).find((r) => r.reciter === name))
+			.filter(Boolean);
+
+		console.log(`[Audio] Building audio for ${reciterObjects.length} reciters:`, reciterObjects.map((r) => `${r.reciter} (id:${r.id})`));
+
+		const results = await Promise.all(
+			reciterObjects.map(async (reciter) => {
+				const result = await buildVerseClipBase64ForReciter(sortedKeys, reciter);
+				if (!result) {
+					console.warn(`[Audio] ${reciter.reciter}: no audio produced, skipping`);
+					return null;
+				}
+				console.log(`[Audio] ${reciter.reciter}: ready (${result.format}, ~${Math.round(result.base64.length * 0.75 / 1024)} KB)`);
+				return { name: reciter.reciter, base64: result.base64, format: result.format };
+			})
+		);
+		const filtered = results.filter(Boolean);
+		console.log(`[Audio] Final: ${filtered.length}/${reciterObjects.length} reciters have audio`);
+		return filtered;
 	}
 
 	async function sendWordKnowledgeData(surah, ayah, startIdx, endIdx, arabic, translation, root) {
@@ -605,9 +649,9 @@ async function screenshotMultipleWords(caption = '') {
 
 		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		const audioBase64 = await buildVerseClipBase64(sortedKeys);
-		const audioUrls = audioBase64 ? [] : sortedKeys.map(getWordAudioUrl);
-		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audioBase64);
+		const audiosBase64 = await buildAllReciterAudios(sortedKeys);
+		const audioUrls = audiosBase64.length === 0 ? sortedKeys.map(getWordAudioUrl) : [];
+		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');

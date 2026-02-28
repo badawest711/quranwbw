@@ -6,13 +6,18 @@ import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 export async function POST({ request }) {
 	try {
-		const { filename, dataUrl, caption = '', audioUrls = [], audioBase64 = null } = await request.json();
+		const { filename, dataUrl, caption = '', audioUrls = [], audiosBase64 = [] } = await request.json();
 		const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
 		const buffer = Buffer.from(base64, 'base64');
 
 		if (SAVE_LOCAL === 'true') {
 			await mkdir(LOCAL_SCREENSHOTS_DIR, { recursive: true });
 			await writeFile(join(LOCAL_SCREENSHOTS_DIR, filename), buffer);
+			for (const { name, base64: ab64, format = 'wav' } of audiosBase64) {
+				const audioBuf = Buffer.from(ab64, 'base64');
+				const audioFilename = filename.replace('.png', `-${name.replace(/\s+/g, '_')}.${format}`);
+				await writeFile(join(LOCAL_SCREENSHOTS_DIR, audioFilename), audioBuf);
+			}
 		}
 
 		if (PUBLIC_TELEGRAM_ENABLED === 'true') {
@@ -32,19 +37,23 @@ export async function POST({ request }) {
 			const result = await res.json();
 			if (!result.ok) throw new Error(`Telegram error: ${result.description}`);
 
-			if (audioBase64) {
-				// Multi-word recitation clip — pre-built WAV from verse audio trimmed to word range
-				const audioBuf = Buffer.from(audioBase64, 'base64');
-				const audioFilename = filename.replace('.png', '.wav');
-				const audioFormData = new FormData();
-				audioFormData.append('chat_id', TELEGRAM_CHAT_ID);
-				audioFormData.append('audio', new Blob([audioBuf], { type: 'audio/wav' }), audioFilename);
-				const audioRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
-					method: 'POST',
-					body: audioFormData
-				});
-				const audioResult = await audioRes.json();
-				if (!audioResult.ok) throw new Error(`Telegram audio error: ${audioResult.description}`);
+			if (audiosBase64.length > 0) {
+				// Multi-reciter clips — one file per reciter, sent sequentially
+				for (const { name, base64: ab64, format = 'wav' } of audiosBase64) {
+					const audioBuf = Buffer.from(ab64, 'base64');
+					const audioFilename = filename.replace('.png', `-${name.replace(/\s+/g, '_')}.${format}`);
+					const mimeType = format === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+					const audioFormData = new FormData();
+					audioFormData.append('chat_id', TELEGRAM_CHAT_ID);
+					audioFormData.append('audio', new Blob([audioBuf], { type: mimeType }), audioFilename);
+					audioFormData.append('performer', name);
+					const audioRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
+						method: 'POST',
+						body: audioFormData
+					});
+					const audioResult = await audioRes.json();
+					if (!audioResult.ok) throw new Error(`Telegram audio error (${name}): ${audioResult.description}`);
+				}
 			} else if (audioUrls.length === 1) {
 				// Single word — send by URL directly
 				const audioRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendAudio`, {
