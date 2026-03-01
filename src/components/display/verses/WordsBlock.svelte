@@ -49,6 +49,9 @@
 	const COLOR_ROOT_LABEL_FONT = 'serif';
 	const BUTTON_COLOR_LIGHT_BLUE = '#B0E0E6';
 	const BUTTON_COLOR_PLUM = '#DDA0DD';
+	const COLOR_PROGRESS_TRACK = 'rgba(128,128,128,0.2)';
+	const COLOR_PROGRESS_ROOT  = 'rgba(0,255,255,0.7)';
+	const COLOR_PROGRESS_LEMMA = 'rgba(220,38,38,0.8)';
 
 	// Screenshot & Audio
 	const SCREENSHOT_PAD = 8;
@@ -75,6 +78,9 @@
 	const DIALOG_MIN_WIDTH = '580px';
 	const DIALOG_TEXTAREA_ROWS = 3;
 
+	// Calculation
+	const WORD_RATIO_SQRT_MULTIPLIER = 5;
+
 	// Regex patterns
 	const PAUSE_MARKS_REGEX = /[ۖۗۘۙۚۛۜ۩۞]/g;
 
@@ -89,6 +95,7 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	const WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED = false;
+	const PROGRESS_BAR_THICKNESS = 2; // px — adjust to change bar height
 
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
@@ -327,7 +334,10 @@
 		const rootCount = root ? (sameRootMap[root]?.length ?? 0) : 0;
 		const exactCount = uthmani ? (exactWordsMap[uthmani]?.length ?? 0) : 0;
 		if (!rootCount && !exactCount) return null;
-		return { rootCount, exactCount };
+		let r = rootCount || 1;
+		let e = exactCount || 1;
+		if (e > r) { const tmp = r; r = e; e = tmp; }
+		return { rootCount: r, exactCount: e };
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -812,6 +822,20 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				{/if}
 			</span>
 
+			{#if rootDataMap[wordKey]}
+				{@const counts = getWordCounts(wordKey)}
+				{@const barPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.rootCount ?? 0)), 50) / 50 * 100}
+				{@const lemmaPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.exactCount ?? 0)), 50) / 50 * 100}
+				<div
+					data-screenshot-exclude
+					class="w-full relative overflow-hidden rounded-full"
+					style="height:{PROGRESS_BAR_THICKNESS}px; background:{COLOR_PROGRESS_TRACK};"
+				>
+					<div style="position:absolute; left:50%; transform:translateX(-50%); width:{barPct}%; height:100%; background:{COLOR_PROGRESS_ROOT}; border-radius:inherit;"></div>
+					<div style="position:absolute; left:50%; transform:translateX(-50%); width:{lemmaPct}%; height:100%; background:{COLOR_PROGRESS_LEMMA}; border-radius:inherit;"></div>
+				</div>
+			{/if}
+
 			<!-- word translation and transliteration, only for wbw modes -->
 			{#if WBW_DISPLAY_TYPES.includes($__displayType)}
 				<div class={wordTranslationClasses} data-fontSize={fontSizes.wordTranslationText}>
@@ -820,14 +844,6 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 						<span class={$__signLanguageModeEnabled && 'font-Arabic-Sign-Language'}>{translationWords[word]}</span>
 					</span>
 				</div>
-			{/if}
-			{#if rootDataMap[wordKey]}
-				{@const counts = getWordCounts(wordKey)}
-				<span
-					data-screenshot-exclude
-					class="leading-none font-sans {fontSizes.wordTranslationText} theme opacity-50"
-					style={counts?.rootCount > 20 || counts?.exactCount > 20 ? 'color: #dc2626;' : ''}
-				>{counts?.rootCount} / {counts?.exactCount}</span>
 			{/if}
 		</div>
 
