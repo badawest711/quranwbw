@@ -161,7 +161,7 @@
 			hover:cursor-pointer
 			${window.theme('hover')}
 			${$__displayType === 1 ? 'text-center flex flex-col' : 'inline-flex flex-col'}
-			${selectableDisplays[$__displayType].layout === 'wbw' ? 'px-3 py-2' : MUSHAF_FONT_TYPES.includes($__fontType) ? ($__currentPage === PAGE_MUSHAF ? 'p-0' : 'px-0 py-2') : 'px-1 py-2'}
+			${selectableDisplays[$__displayType].layout === 'wbw' ? 'px-3 py-[10px]' : MUSHAF_FONT_TYPES.includes($__fontType) ? ($__currentPage === PAGE_MUSHAF ? 'p-0' : 'px-0 py-[10px]') : 'px-1 py-[10px]'}
 			${exampleVerse && '!p-0'}
 		`;
 	}
@@ -816,6 +816,14 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 						<span class={$__signLanguageModeEnabled && 'font-Arabic-Sign-Language'}>{translationWords[word]}</span>
 					</span>
 				</div>
+			{/if}
+			{#if rootDataMap[wordKey]}
+				{@const counts = getWordCounts(wordKey)}
+				<span
+					data-screenshot-exclude
+					class="leading-none font-sans {fontSizes.wordTranslationText} theme opacity-50"
+					style={counts?.rootCount > 20 || counts?.exactCount > 20 ? 'color: #dc2626;' : ''}
+				>{counts?.rootCount} / {counts?.exactCount}</span>
 			{/if}
 		</div>
 

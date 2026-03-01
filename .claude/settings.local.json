@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git checkout:*)",
       "Bash(node:*)",
-      "WebFetch(domain:static.quranwbw.com)"
+      "WebFetch(domain:static.quranwbw.com)",
+      "Bash(python3 -:*)"
     ]
   }
 }
