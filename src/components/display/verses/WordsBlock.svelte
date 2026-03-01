@@ -17,7 +17,7 @@
 	import { getMushafWordFontLink, isFirefoxDarkNonTajweed, isFirefoxDarkTajweed } from '$utils/getMushafWordFontLink';
 	import { fetchAndCacheJson } from '$utils/fetchData';
 	import { morphologyDataUrls, wordsAudioURL, staticEndpoint } from '$data/websiteSettings';
-	import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
+	import { PUBLIC_TELEGRAM_ENABLED, PUBLIC_WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED, PUBLIC_WORD_RATIO_PROGRESS_BARS_ENABLED, PUBLIC_SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT, PUBLIC_SHOW_RATIO_PROGRESS_BACKGROUND } from '$env/static/public';
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// CONSTANTS & MAGIC VALUES
@@ -51,7 +51,8 @@
 	const BUTTON_COLOR_PLUM = '#DDA0DD';
 	const COLOR_PROGRESS_TRACK = 'rgba(128,128,128,0.2)';
 	const COLOR_PROGRESS_ROOT  = 'rgba(0,255,255,0.7)';
-	const COLOR_PROGRESS_LEMMA = 'rgba(220,38,38,0.8)';
+	const COLOR_PROGRESS_LEMMA   = 'rgba(220,38,38,0.8)';
+	const COLOR_RATIO_PROGRESS_BG = 'rgba(0,0,0,0.05)';
 
 	// Screenshot & Audio
 	const SCREENSHOT_PAD = 8;
@@ -94,8 +95,13 @@
 	// PROPS & DERIVED VALUES
 	// ═══════════════════════════════════════════════════════════════════════════
 
-	const WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED = false;
-	const PROGRESS_BAR_THICKNESS = 2; // px — adjust to change bar height
+	const flag = (v) => v === 'true';
+
+	const WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED       = flag(PUBLIC_WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED);
+	const PROGRESS_BAR_THICKNESS                  = 2; // px — adjust to change bar height
+	const WORD_RATIO_PROGRESS_BARS_ENABLED        = flag(PUBLIC_WORD_RATIO_PROGRESS_BARS_ENABLED);
+	const SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT    = flag(PUBLIC_SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT);
+	const SHOW_RATIO_PROGRESS_BACKGROUND          = flag(PUBLIC_SHOW_RATIO_PROGRESS_BACKGROUND);
 
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
@@ -725,6 +731,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 {#each { length: value.meta.words } as _, word}
 	{#if shouldDisplayWord(word)}
 		{@const wordKey = getWordKey(word)}
+		{@const hasProgressBar = WORD_RATIO_PROGRESS_BARS_ENABLED && !!rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || !!rootDataMap[wordKey][1])}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
@@ -736,7 +743,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}
 				${anchorWordIndex !== word && startWordIndex !== null && word >= startWordIndex && word <= stopWordIndex ? 'ring-2 ring-blue-400' : ''}
 			`.trim()}
-			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? 'background-color: #bcd9a240;' : ''}
+			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? `background-color: ${COLOR_HIGHLIGHT_BG};` : SHOW_RATIO_PROGRESS_BACKGROUND && hasProgressBar ? `background-color: ${COLOR_RATIO_PROGRESS_BG};` : ''}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
 		on:mouseleave={() => { hoveredWordKey = null; }}
@@ -822,7 +829,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				{/if}
 			</span>
 
-			{#if rootDataMap[wordKey]}
+			{#if WORD_RATIO_PROGRESS_BARS_ENABLED && rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || rootDataMap[wordKey][1])}
 				{@const counts = getWordCounts(wordKey)}
 				{@const barPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.rootCount ?? 0)), 50) / 50 * 100}
 				{@const lemmaPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.exactCount ?? 0)), 50) / 50 * 100}
