@@ -99,27 +99,12 @@
 	// BUTTON CONFIGURATIONS
 	// ═══════════════════════════════════════════════════════════════════════════
 
-	const topLeftButtons = [
-		{ icon: '⭐', bg: BUTTON_COLOR_LIGHT_BLUE },
-		{ icon: '🔖', bg: BUTTON_COLOR_PLUM }
-	];
-
-	const cornerButtons = [
-		{ 
-			icon: '◀', 
-			position: 'bottom-0 left-0',  
-			rounded: 'rounded-tr', 
-			bg: BUTTON_COLOR_LIGHT_BLUE, 
-			onClick: (word) => selectAdjacentWord(word, +1) 
-		},
-		{ 
-			icon: '▶', 
-			position: 'bottom-0 right-0', 
-			rounded: 'rounded-tl', 
-			bg: BUTTON_COLOR_LIGHT_BLUE, 
-			onClick: (word) => selectAdjacentWord(word, -1) 
-		}
-	];
+	const buttons = {
+		saveTajweed: { icon: '🎙️', tooltip: 'Save Tajweed word', position: 'top-0 left-0',  rounded: 'rounded-br', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey), onContextMenu: (wordKey) => openContextMenuDialog(wordKey) },
+		saveArabic:  { icon: '📷', tooltip: 'Save Arabic word',   position: 'top-0 right-0', rounded: 'rounded-bl', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey), onContextMenu: (wordKey) => openContextMenuDialog(wordKey) },
+		prev:        { icon: '◀', tooltip: 'Select previous word', corner: true, position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, +1) },
+		next:        { icon: '▶', tooltip: 'Select next word',     corner: true, position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, -1) }
+	};
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// REACTIVE DECLARATIONS
@@ -739,21 +724,21 @@ async function screenshotMultipleWords(caption = '') {
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
 		on:mouseleave={() => { hoveredWordKey = null; }}
 		>
-			{#if $__wordTooltip > 1}
+			{#if buttons.saveArabic.condition()}
 				<!-- svelte-ignore a11y-click-events-have-key-events -->
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<span
 					data-screenshot-exclude
-					class="absolute top-0 right-0 text-[9px] leading-none px-1 py-0.5 rounded-bl cursor-pointer select-none border z-10 hidden md:block transition-all {hoveredButtonKey === wordKey ? 'bg-cyan-400' : 'bg-[#FA8072]'}"
-					style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
-					on:click|stopPropagation={() => screenshotWord(wordKey)}
-				on:contextmenu|preventDefault|stopPropagation={() => openContextMenuDialog(wordKey)}
+					class="absolute {buttons.saveArabic.position} {buttons.saveArabic.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
+					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey ? buttons.saveArabic.bgHovered : buttons.saveArabic.bg};"
+					on:click|stopPropagation={() => buttons.saveArabic.onClick(wordKey)}
+				on:contextmenu|preventDefault|stopPropagation={() => buttons.saveArabic.onContextMenu(wordKey)}
 					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
 					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
-				>📷</span>
+				>{buttons.saveArabic.icon}</span>
 				{#if hoveredButtonKey === wordKey}
 					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
-						Screenshot word
+						{buttons.saveArabic.tooltip}
 					</div>
 				{/if}
 			{/if}
@@ -761,23 +746,28 @@ async function screenshotMultipleWords(caption = '') {
 			<!-- svelte-ignore a11y-click-events-have-key-events -->
 			<!-- svelte-ignore a11y-no-static-element-interactions -->
 
-			<!-- top-left pair -->
-			<div
-				data-screenshot-exclude
-				class="absolute top-0 left-0 flex hidden md:flex z-10 transition-all"
-				style="opacity: {hoveredWordKey === wordKey ? 1 : 0};"
-			>
-				{#each topLeftButtons as btn}
-					<span
-						class="text-[9px] leading-none px-1 py-0.5 rounded-br cursor-pointer select-none border"
-						style="background:{btn.bg};"
-						on:click|stopPropagation={() => {}}
-					>{btn.icon}</span>
-				{/each}
-			</div>
+			<!-- saveTajweed button -->
+			{#if buttons.saveTajweed.condition()}
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<span
+					data-screenshot-exclude
+					class="absolute {buttons.saveTajweed.position} {buttons.saveTajweed.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
+					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey ? buttons.saveTajweed.bgHovered : buttons.saveTajweed.bg};"
+					on:click|stopPropagation={() => buttons.saveTajweed.onClick(wordKey)}
+				on:contextmenu|preventDefault|stopPropagation={() => buttons.saveTajweed.onContextMenu(wordKey)}
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
+					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
+				>{buttons.saveTajweed.icon}</span>
+				{#if hoveredButtonKey === wordKey}
+					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
+						{buttons.saveTajweed.tooltip}
+					</div>
+				{/if}
+			{/if}
 
 			<!-- corner buttons -->
-			{#each cornerButtons as btn}
+			{#each Object.values(buttons).filter(b => b.corner) as btn}
 				<span
 					data-screenshot-exclude
 					class="absolute {btn.position} {btn.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
