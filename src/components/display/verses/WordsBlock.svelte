@@ -1,3 +1,20 @@
+<script context="module">
+	let _saveTimer = null;
+
+	// Shared across all WordsBlock instances — debounces rapid toggling
+	// words = current snapshot of the Set, passed at call time
+	export function scheduleKnownLemmasSave(words) {
+		clearTimeout(_saveTimer);
+		_saveTimer = setTimeout(() => {
+			fetch('/api/known-lemmas', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ words })
+			}).catch(e => console.warn('[known-lemmas] Save failed:', e));
+		}, 400);
+	}
+</script>
+
 <script>
 	export let key;
 	export let value;
@@ -10,7 +27,7 @@
 	import { onMount } from 'svelte';
 	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations, selectableReciters } from '$data/options';
 	import { supplicationsFromQuran } from '$data/quranMeta';
-	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge, __reciter } from '$utils/stores';
+	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge, __knownLemmas, __reciter } from '$utils/stores';
 	import { loadFont } from '$utils/loadFont';
 	import { wordAudioController } from '$utils/audioController';
 	import { updateSettings } from '$utils/updateSettings';
@@ -117,8 +134,9 @@
 	const buttons = {
 		saveTajweed: { icon: '🎙️', tooltip: 'Save Tajweed word', position: 'top-0 left-0',  rounded: 'rounded-br', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey, '', 'tajweed'), onContextMenu: (wordKey) => openContextMenuDialog(wordKey, 'tajweed') },
 		saveArabic:  { icon: '📷', tooltip: 'Save Arabic word',   position: 'top-0 right-0', rounded: 'rounded-bl', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey, '', 'arabic'), onContextMenu: (wordKey) => openContextMenuDialog(wordKey, 'arabic') },
-		prev:        { icon: '◀', tooltip: 'Select previous word', corner: true, position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, +1) },
-		next:        { icon: '▶', tooltip: 'Select next word',     corner: true, position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, -1) }
+		prev:        { icon: '◀', tooltip: 'Select previous word', corner: true, position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: BUTTON_COLOR_LIGHT_BLUE, bgHovered: '#FFFF00', onClick: (word) => selectAdjacentWord(word, +1) },
+		next:        { icon: '▶', tooltip: 'Select next word',     corner: true, position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: BUTTON_COLOR_LIGHT_BLUE, bgHovered: '#FFFF00', onClick: (word) => selectAdjacentWord(word, -1) },
+		saveToKnownLemmas: { position: 'right-0 top-1/2 -translate-y-1/2', rounded: 'rounded-l', bgHovered: '#22d3ee', bgFn: (known) => known ? '#86efac' : '#fca5a5', iconFn: (known) => known ? '✓' : '+', tooltipFn: (known) => known ? 'Remove from known' : 'Mark as known', condition: () => true, onClick: (wordKey) => toggleKnownLemma(wordKey) }
 	};
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -244,6 +262,17 @@
 		contextMenuDialogMode = mode;
 		contextMenuDialogText = '';
 		contextMenuDialogOpen = true;
+	}
+
+	function toggleKnownLemma(wk) {
+		const lemma = rootDataMap[wk]?.[0]?.replace(PAUSE_MARKS_REGEX, '');
+		if (!lemma) return;
+		__knownLemmas.update(set => {
+			const next = new Set(set);
+			if (next.has(lemma)) next.delete(lemma); else next.add(lemma);
+			return next;
+		});
+		scheduleKnownLemmasSave([...$__knownLemmas]);
 	}
 
 	function confirmContextMenuDialog() {
@@ -731,7 +760,9 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 {#each { length: value.meta.words } as _, word}
 	{#if shouldDisplayWord(word)}
 		{@const wordKey = getWordKey(word)}
-		{@const hasProgressBar = WORD_RATIO_PROGRESS_BARS_ENABLED && !!rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || !!rootDataMap[wordKey][1])}
+		{@const arabicLemma = rootDataMap[wordKey]?.[0]?.replace(PAUSE_MARKS_REGEX, '') ?? null}
+		{@const isKnownLemma = !!arabicLemma && $__knownLemmas.has(arabicLemma)}
+		{@const hasProgressBar = WORD_RATIO_PROGRESS_BARS_ENABLED && !isKnownLemma && !!rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || !!rootDataMap[wordKey][1])}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
@@ -754,13 +785,13 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				<span
 					data-screenshot-exclude
 					class="absolute {buttons.saveArabic.position} {buttons.saveArabic.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
-					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey ? buttons.saveArabic.bgHovered : buttons.saveArabic.bg};"
+					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey + ':saveArabic' ? buttons.saveArabic.bgHovered : buttons.saveArabic.bg};"
 					on:click|stopPropagation={() => buttons.saveArabic.onClick(wordKey)}
 				on:contextmenu|preventDefault|stopPropagation={() => buttons.saveArabic.onContextMenu(wordKey)}
-					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
-					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey + ':saveArabic'; }}
+						on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
 				>{buttons.saveArabic.icon}</span>
-				{#if hoveredButtonKey === wordKey}
+				{#if hoveredButtonKey === wordKey + ':saveArabic'}
 					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
 						{buttons.saveArabic.tooltip}
 					</div>
@@ -777,27 +808,48 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				<span
 					data-screenshot-exclude
 					class="absolute {buttons.saveTajweed.position} {buttons.saveTajweed.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
-					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey ? buttons.saveTajweed.bgHovered : buttons.saveTajweed.bg};"
+					style="opacity: {hoveredWordKey === wordKey ? 1 : 0}; background: {hoveredButtonKey === wordKey + ':saveTajweed' ? buttons.saveTajweed.bgHovered : buttons.saveTajweed.bg};"
 					on:click|stopPropagation={() => buttons.saveTajweed.onClick(wordKey)}
 				on:contextmenu|preventDefault|stopPropagation={() => buttons.saveTajweed.onContextMenu(wordKey)}
-					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey; }}
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey + ':saveTajweed'; }}
 					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
 				>{buttons.saveTajweed.icon}</span>
-				{#if hoveredButtonKey === wordKey}
+				{#if hoveredButtonKey === wordKey + ':saveTajweed'}
 					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
 						{buttons.saveTajweed.tooltip}
 					</div>
 				{/if}
 			{/if}
 
+			<!-- known-lemma toggle button (center right) -->
+			{#if arabicLemma}
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<span
+					data-screenshot-exclude
+					class="absolute right-0 top-1/2 -translate-y-1/2 text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all rounded-l"
+					style="opacity:{hoveredWordKey === wordKey ? 1 : 0}; background:{hoveredButtonKey === wordKey + ':saveToKnownLemmas' ? buttons.saveToKnownLemmas.bgHovered : buttons.saveToKnownLemmas.bgFn(isKnownLemma)};"
+					on:click|stopPropagation={() => buttons.saveToKnownLemmas.onClick(wordKey)}
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey + ':saveToKnownLemmas'; }}
+					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
+				>{buttons.saveToKnownLemmas.iconFn(isKnownLemma)}</span>
+				{#if hoveredButtonKey === wordKey + ':saveToKnownLemmas'}
+					<div data-screenshot-exclude class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full z-30 bg-black text-white text-[10px] font-sans rounded px-1.5 py-0.5 whitespace-nowrap">
+						{buttons.saveToKnownLemmas.tooltipFn(isKnownLemma)}
+					</div>
+				{/if}
+			{/if}
+
 			<!-- corner buttons -->
-			{#each Object.values(buttons).filter(b => b.corner) as btn}
+			{#each Object.entries(buttons).filter(([, b]) => b.corner) as [btnKey, btn]}
 				<span
 					data-screenshot-exclude
 					class="absolute {btn.position} {btn.rounded} text-[9px] leading-none px-1 py-0.5 cursor-pointer select-none border z-10 hidden md:block transition-all"
-					style="opacity:{hoveredWordKey === wordKey ? 1 : 0};background:{btn.bg};"
-										on:click|stopPropagation={() => btn.onClick(word)}
-				>{btn.icon}</span>
+					style="opacity:{hoveredWordKey === wordKey ? 1 : 0};background:{hoveredButtonKey === wordKey + ':' + btnKey ? (btn.bgHovered ?? btn.bg) : btn.bg};"
+					on:click|stopPropagation={() => btn.onClick(word)}
+					on:mouseenter|stopPropagation={() => { hoveredButtonKey = wordKey + ':' + btnKey; }}
+					on:mouseleave|stopPropagation={() => { hoveredButtonKey = null; }}
+					>{btn.icon}</span>
 			{/each}
 
 			<!-- cancel highlight button -->
@@ -829,7 +881,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				{/if}
 			</span>
 
-			{#if WORD_RATIO_PROGRESS_BARS_ENABLED && rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || rootDataMap[wordKey][1])}
+			{#if hasProgressBar}
 				{@const counts = getWordCounts(wordKey)}
 				{@const barPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.rootCount ?? 0)), 50) / 50 * 100}
 				{@const lemmaPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.exactCount ?? 0)), 50) / 50 * 100}

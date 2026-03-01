@@ -1,7 +1,8 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
 
-let __wordKnowledge,
+let __knownLemmas,
+	__wordKnowledge,
 	__currentPage,
 	__chapterNumber,
 	__pageNumber,
@@ -219,6 +220,9 @@ if (browser) {
 
 	// to store the word-knowledge progression data (mirrors progression/word-knowledge.json)
 	__wordKnowledge = writable([]);
+
+	// Set of arabic lemma strings the user has marked as known (mirrors progression/known-lemmas.json)
+	__knownLemmas = writable(new Set());
 }
 
 export {
@@ -278,5 +282,6 @@ export {
 	__signLanguageModeEnabled,
 	__verseWordBlocks,
 	__offlineModeSettings,
-	__wordKnowledge
+	__wordKnowledge,
+	__knownLemmas
 };

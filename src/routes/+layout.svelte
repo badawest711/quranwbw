@@ -19,7 +19,7 @@
 	import CopyShareVerseModal from '$ui/Modals/CopyShareVerseModal.svelte';
 	import ConfirmationAlertModal from '$ui/Modals/ConfirmationAlertModal.svelte';
 
-	import { __userSettings, __currentPage, __chapterNumber, __settingsDrawerHidden, __wakeLockEnabled, __fontType, __wordTranslation, __mushafMinimalModeEnabled, __topNavbarVisible, __bottomToolbarVisible, __displayType, __wideWesbiteLayoutEnabled, __signLanguageModeEnabled, __wordTransliterationEnabled, __wordKnowledge } from '$utils/stores';
+	import { __userSettings, __currentPage, __chapterNumber, __settingsDrawerHidden, __wakeLockEnabled, __fontType, __wordTranslation, __mushafMinimalModeEnabled, __topNavbarVisible, __bottomToolbarVisible, __displayType, __wideWesbiteLayoutEnabled, __signLanguageModeEnabled, __wordTransliterationEnabled, __wordKnowledge, __knownLemmas } from '$utils/stores';
 	import { debounce } from '$utils/debounce';
 	import { toggleNavbar } from '$utils/toggleNavbar';
 	import { resetAudioSettings } from '$utils/audioController';
@@ -36,6 +36,14 @@
 			__wordKnowledge.set(data.words ?? []);
 		} catch (err) {
 			console.warn('[word-knowledge] Failed to load:', err);
+		}
+
+		try {
+			const res = await fetch('/api/known-lemmas');
+			const words = await res.json();
+			__knownLemmas.set(new Set(Array.isArray(words) ? words : []));
+		} catch (err) {
+			console.warn('[known-lemmas] Failed to load:', err);
 		}
 	});
 
