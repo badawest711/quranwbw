@@ -88,6 +88,8 @@
 	// PROPS & DERIVED VALUES
 	// ═══════════════════════════════════════════════════════════════════════════
 
+	const WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED = false;
+
 	const fontSizes = JSON.parse($__userSettings).displaySettings.fontSizes;
 	const chapter = key.split(':')[0];
 	const verse = key.split(':')[1];
@@ -273,13 +275,15 @@
 
 	// Update highlighted indices when word knowledge changes
 	$: {
-		const knowledgeArabicSet = new Set($__wordKnowledge.flatMap((e) => e.arabic.split(' ')));
-		highlightedWordIndices = new Set(
-			arabicWords.reduce((acc, w, i) => {
-				if (knowledgeArabicSet.has(w)) acc.push(i + 1); // 1-based
-				return acc;
-			}, [])
-		);
+		if (WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED) {
+			const knowledgeArabicSet = new Set($__wordKnowledge.flatMap((e) => e.arabic.split(' ')));
+			highlightedWordIndices = new Set(
+				arabicWords.reduce((acc, w, i) => {
+					if (knowledgeArabicSet.has(w)) acc.push(i + 1); // 1-based
+					return acc;
+				}, [])
+			);
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -722,7 +726,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}
 				${anchorWordIndex !== word && startWordIndex !== null && word >= startWordIndex && word <= stopWordIndex ? 'ring-2 ring-blue-400' : ''}
 			`.trim()}
-			style={highlightedWordIndices.has(word + 1) ? 'background-color: #bcd9a240;' : ''}
+			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? 'background-color: #bcd9a240;' : ''}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
 		on:mouseleave={() => { hoveredWordKey = null; }}
