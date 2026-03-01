@@ -100,8 +100,8 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	const buttons = {
-		saveTajweed: { icon: '🎙️', tooltip: 'Save Tajweed word', position: 'top-0 left-0',  rounded: 'rounded-br', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey), onContextMenu: (wordKey) => openContextMenuDialog(wordKey) },
-		saveArabic:  { icon: '📷', tooltip: 'Save Arabic word',   position: 'top-0 right-0', rounded: 'rounded-bl', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey), onContextMenu: (wordKey) => openContextMenuDialog(wordKey) },
+		saveTajweed: { icon: '🎙️', tooltip: 'Save Tajweed word', position: 'top-0 left-0',  rounded: 'rounded-br', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey, '', 'tajweed'), onContextMenu: (wordKey) => openContextMenuDialog(wordKey, 'tajweed') },
+		saveArabic:  { icon: '📷', tooltip: 'Save Arabic word',   position: 'top-0 right-0', rounded: 'rounded-bl', bg: '#FA8072', bgHovered: '#22d3ee', condition: () => $__wordTooltip > 1, onClick: (wordKey) => screenshotWord(wordKey, '', 'arabic'), onContextMenu: (wordKey) => openContextMenuDialog(wordKey, 'arabic') },
 		prev:        { icon: '◀', tooltip: 'Select previous word', corner: true, position: 'bottom-0 left-0',  rounded: 'rounded-tr', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, +1) },
 		next:        { icon: '▶', tooltip: 'Select next word',     corner: true, position: 'bottom-0 right-0', rounded: 'rounded-tl', bg: BUTTON_COLOR_LIGHT_BLUE, onClick: (word) => selectAdjacentWord(word, -1) }
 	};
@@ -222,9 +222,11 @@
 	let contextMenuDialogOpen = false;
 	let contextMenuDialogText = '';
 	let contextMenuDialogWordKey = null;
+	let contextMenuDialogMode = 'arabic';
 
-	function openContextMenuDialog(wk) {
+	function openContextMenuDialog(wk, mode) {
 		contextMenuDialogWordKey = wk;
+		contextMenuDialogMode = mode;
 		contextMenuDialogText = '';
 		contextMenuDialogOpen = true;
 	}
@@ -232,8 +234,9 @@
 	function confirmContextMenuDialog() {
 		const wordKey = contextMenuDialogWordKey;
 		const caption = contextMenuDialogText;
+		const mode = contextMenuDialogMode;
 		contextMenuDialogOpen = false;
-		screenshotWord(wordKey, caption);
+		screenshotWord(wordKey, caption, mode);
 	}
 
 	// Word selection for multi-word screenshots
@@ -433,12 +436,12 @@
 		return `${wordsAudioURL}/${ch}/${String(ch).padStart(3, '0')}_${String(vs).padStart(3, '0')}_${String(wd).padStart(3, '0')}.mp3?version=2`;
 	}
 
-	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audiosBase64 = []) {
+	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audiosBase64 = [], mode = 'arabic') {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audiosBase64 })
+			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audiosBase64, mode })
 		});
 	}
 
@@ -603,7 +606,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	return clone;
 } 
 
-async function screenshotMultipleWords(caption = '') {
+async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 	const rangeIndices = new Set();
 	for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
 	rangeIndices.add(anchorWordIndex);
@@ -634,9 +637,9 @@ async function screenshotMultipleWords(caption = '') {
 
 		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		const audiosBase64 = await buildAllReciterAudios(sortedKeys);
-		const audioUrls = audiosBase64.length === 0 ? sortedKeys.map(getWordAudioUrl) : [];
-		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64);
+		const audiosBase64 = mode === 'tajweed' ? await buildAllReciterAudios(sortedKeys) : [];
+		const audioUrls = mode === 'tajweed' && audiosBase64.length === 0 ? sortedKeys.map(getWordAudioUrl) : [];
+		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64, mode);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
@@ -656,7 +659,7 @@ async function screenshotMultipleWords(caption = '') {
 		console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicText}`);
 	}
 
-	async function screenshotSingleWord(wordKey, caption = '') {
+	async function screenshotSingleWord(wordKey, caption = '', mode = 'arabic') {
 	const wordEl = document.getElementById(wordKey);
 	const wordRect = wordEl.getBoundingClientRect();
 	const totalW = wordRect.width + SCREENSHOT_PAD * 2;
@@ -678,7 +681,7 @@ async function screenshotMultipleWords(caption = '') {
 
 	const canvas = await captureWordVisualsToCanvas(container);
 	const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-	await sendScreenshotToServer(filename, canvas, caption, [getWordAudioUrl(wordKey)]);
+	await sendScreenshotToServer(filename, canvas, caption, mode === 'tajweed' ? [getWordAudioUrl(wordKey)] : [], [], mode);
 
 	const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
 	await sendWordKnowledgeData(
@@ -694,12 +697,12 @@ async function screenshotMultipleWords(caption = '') {
 	console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicWords[_wIdx]}`);
 }
 
-	async function screenshotWord(wordKey, caption = '') {
+	async function screenshotWord(wordKey, caption = '', mode = 'arabic') {
 		playScreenshotPing();
 		if (startWordIndex !== null) {
-			await screenshotMultipleWords(caption);
+			await screenshotMultipleWords(caption, mode);
 		} else {
-			await screenshotSingleWord(wordKey, caption);
+			await screenshotSingleWord(wordKey, caption, mode);
 		}
 	}
 </script>
