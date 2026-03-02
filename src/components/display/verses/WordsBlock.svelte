@@ -763,6 +763,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 		{@const arabicLemma = rootDataMap[wordKey]?.[0]?.replace(PAUSE_MARKS_REGEX, '') ?? null}
 		{@const isKnownLemma = !!arabicLemma && $__knownLemmas.has(arabicLemma)}
 		{@const hasProgressBar = WORD_RATIO_PROGRESS_BARS_ENABLED && !isKnownLemma && !!rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || !!rootDataMap[wordKey][1])}
+		{@const showProgressBar = (hoveredWordKey === wordKey && !!rootDataMap[wordKey]) || hasProgressBar}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
@@ -881,7 +882,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 				{/if}
 			</span>
 
-			{#if hasProgressBar}
+			{#if showProgressBar}
 				{@const counts = getWordCounts(wordKey)}
 				{@const barPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.rootCount ?? 0)), 50) / 50 * 100}
 				{@const lemmaPct = Math.min(Math.sqrt(WORD_RATIO_SQRT_MULTIPLIER * (counts?.exactCount ?? 0)), 50) / 50 * 100}
