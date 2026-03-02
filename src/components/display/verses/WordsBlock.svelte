@@ -277,6 +277,17 @@
 		scheduleKnownLemmasSave([...$__knownLemmas]);
 	}
 
+	function addToKnownLemma(wk) {
+		const lemma = rootDataMap[wk]?.[0]?.replace(PAUSE_MARKS_REGEX, '');
+		if (!lemma || $__knownLemmas.has(lemma)) return;
+		__knownLemmas.update(set => {
+			const next = new Set(set);
+			next.add(lemma);
+			return next;
+		});
+		scheduleKnownLemmasSave([...$__knownLemmas]);
+	}
+
 	function confirmContextMenuDialog() {
 		const wordKey = contextMenuDialogWordKey;
 		const caption = contextMenuDialogText;
@@ -781,6 +792,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 			`.trim()}
 			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? `background-color: ${COLOR_HIGHLIGHT_BG};` : SHOW_RATIO_PROGRESS_BACKGROUND && hasProgressBar ? `background-color: ${isHighLemmaCount ? COLOR_RATIO_PROGRESS_BG_HIGH_LEMMA : COLOR_RATIO_PROGRESS_BG};` : ''}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
+		on:contextmenu|preventDefault={() => addToKnownLemma(wordKey)}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
 		on:mouseleave={() => { hoveredWordKey = null; }}
 		>
