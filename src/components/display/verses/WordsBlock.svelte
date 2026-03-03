@@ -117,7 +117,7 @@
 	const flag = (v) => v === 'true';
 
 	const WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED       = flag(PUBLIC_WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED);
-	const PROGRESS_BAR_THICKNESS                  = 2; // px — adjust to change bar height
+	const PROGRESS_BAR_THICKNESS                  = 4; // px — adjust to change bar height
 	const WORD_RATIO_PROGRESS_BARS_ENABLED        = flag(PUBLIC_WORD_RATIO_PROGRESS_BARS_ENABLED);
 	const SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT    = flag(PUBLIC_SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT);
 	const SHOW_RATIO_PROGRESS_BACKGROUND          = flag(PUBLIC_SHOW_RATIO_PROGRESS_BACKGROUND);
