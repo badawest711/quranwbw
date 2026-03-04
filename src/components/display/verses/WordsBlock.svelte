@@ -1,6 +1,18 @@
 <script context="module">
 	let _saveTimer = null;
 
+	// Tooltip data — fetched once, shared across all instances via a cached promise
+	let _tooltipDataPromise = null;
+	function ensureTooltipData() {
+		if (!_tooltipDataPromise) {
+			_tooltipDataPromise = Promise.all([
+				fetch('/api/root-lemmas').then(r => r.ok ? r.json() : {}),
+				fetch('/api/lemma-word-frequency').then(r => r.ok ? r.json() : {})
+			]).catch(() => [{}, {}]);
+		}
+		return _tooltipDataPromise;
+	}
+
 	// Shared across all WordsBlock instances — debounces rapid toggling
 	// words = current snapshot of the Set, passed at call time
 	export function scheduleKnownLemmasSave(words) {
@@ -306,6 +318,10 @@
 	let sameRootMap = {};
 	let exactWordsMap = {};
 
+	// Tooltip enrichment data (root → lemmas, lemma → english word frequencies)
+	let rootLemmasData   = {};
+	let lemmaWordFreqData = {};
+
 	// Highlighted words from word knowledge store
 	let highlightedWordIndices = new Set();
 
@@ -358,20 +374,37 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	onMount(async () => {
-		const [rootRes, sameRootRes, exactRes] = await Promise.all([
-			fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology'),
-			fetchAndCacheJson(morphologyDataUrls.wordsWithSameRootKeys, 'morphology'),
-			fetchAndCacheJson(morphologyDataUrls.exactWordsKeys, 'morphology')
+		const [[rootRes, sameRootRes, exactRes], [rl, lwf]] = await Promise.all([
+			Promise.all([
+				fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology'),
+				fetchAndCacheJson(morphologyDataUrls.wordsWithSameRootKeys, 'morphology'),
+				fetchAndCacheJson(morphologyDataUrls.exactWordsKeys, 'morphology')
+			]),
+			ensureTooltipData()
 		]);
-		rootDataMap = rootRes?.data ?? {};
-		sameRootMap = sameRootRes?.data ?? {};
-		exactWordsMap = exactRes?.data ?? {};
+		rootDataMap     = rootRes?.data ?? {};
+		sameRootMap     = sameRootRes?.data ?? {};
+		exactWordsMap   = exactRes?.data ?? {};
+		rootLemmasData  = rl;
+		lemmaWordFreqData = lwf;
 	});
 
 	function formatRoot(wordKey) {
 		const root = rootDataMap[wordKey]?.[1];
 		if (!root) return null;
 		return Array.from(root).join(ROOT_SEPARATOR);
+	}
+
+	function getTopLemmasForWord(wordKey, n = 5) {
+		const root = rootDataMap[wordKey]?.[1];
+		if (!root || !rootLemmasData[root]) return [];
+		return rootLemmasData[root].slice(0, n); // [[lemma, count], ...]
+	}
+
+	function getTopEnglishWords(lemma, n = 3) {
+		const freq = lemmaWordFreqData[lemma];
+		if (!freq) return [];
+		return Object.keys(freq).slice(0, n);
 	}
 
 	function getWordCounts(wordKey) {
@@ -935,6 +968,18 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 					{/if}
 					{#if getWordCounts(wordKey)}
 						<span class="text-xs opacity-70">{getWordCounts(wordKey).rootCount} / {getWordCounts(wordKey).exactCount}</span>
+					{/if}
+					{#if getTopLemmasForWord(wordKey).length > 0}
+						<div class="border-t border-black/20 mt-1 pt-3 w-full flex flex-col gap-3 text-left">
+							{#each getTopLemmasForWord(wordKey) as [lemma, count]}
+								{@const englishWords = getTopEnglishWords(lemma)}
+								<div class="flex items-center gap-1 whitespace-nowrap">
+									<span class="arabicText arabic-font-{$__fontType}" style="font-size: 1.4rem;">{lemma}</span>
+									<span style="font-size: 0.95rem;">: [{englishWords.join(', ')}]</span>
+									<span style="font-size: 0.8rem;" class="opacity-60">({count})</span>
+								</div>
+							{/each}
+						</div>
 					{/if}
 				</div>
 			</Tooltip>
