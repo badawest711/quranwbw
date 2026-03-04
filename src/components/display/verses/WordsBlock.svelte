@@ -825,7 +825,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 		<div
 			id={wordKey}
 			class={`
-				word relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid
+				word relative rounded-lg ${wordAndEndIconCommonClasses} text-center print:break-inside-avoid my-1
 				${$__audioSettings.playingWordKey === wordKey || ($__currentPage === 'morphology' && $__morphologyKey === wordKey) || ($__morphologyModalVisible && $__morphologyKey === wordKey) ? window.theme('bgSecondaryDark') : ''}
 				${$__currentPage === 'supplications' && word + 1 < (supplicationsFromQuran[key] || 0) ? ($__hideNonDuaPart ? 'hidden' : 'opacity-30') : ''}
 				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}

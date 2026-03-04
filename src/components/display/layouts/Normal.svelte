@@ -18,7 +18,7 @@
 		<VerseOptionButtons {key} {value} />
 
 		<!-- words -->
-		<div class="flex flex-row-reverse flex-wrap">
+		<div class="flex flex-row-reverse flex-wrap gap-y-2">
 			<WordsBlock {key} {value} />
 		</div>
 
