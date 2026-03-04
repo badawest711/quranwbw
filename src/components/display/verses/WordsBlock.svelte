@@ -106,6 +106,16 @@
 	const LABEL_HEIGHT_MULTIPLIER = 1.4;
 	const ROOT_SEPARATOR = ' · ';
 
+	// Features
+	const PAUSE_MARK_SEPARATORS_ENABLED   = true;
+	const PAUSE_MARK_SEPARATOR_COLOR      = 'rgba(59,130,246,0.75)';
+	const PAUSE_MARK_SEPARATOR_THICKNESS  = 4;    // px — line width
+	const PAUSE_MARK_SEPARATOR_DASH_LEN   = 10;   // px — length of each dash
+	const PAUSE_MARK_SEPARATOR_GAP_LEN    = 6;    // px — gap between dashes
+	const PAUSE_MARK_SEPARATOR_DASH_COUNT = 5;
+	const PAUSE_MARK_SEPARATOR_H_GAP      = 7;    // px — horizontal space on each side
+	const PAUSE_MARK_SEPARATOR_LINE_H     = PAUSE_MARK_SEPARATOR_DASH_COUNT * PAUSE_MARK_SEPARATOR_DASH_LEN + (PAUSE_MARK_SEPARATOR_DASH_COUNT - 1) * PAUSE_MARK_SEPARATOR_GAP_LEN;
+
 	// Context menu dialog
 	const DIALOG_MIN_WIDTH = '580px';
 	const DIALOG_TEXTAREA_ROWS = 3;
@@ -991,6 +1001,11 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 					{/if}
 				</div>
 			</Tooltip>
+		{/if}
+		{#if PAUSE_MARK_SEPARATORS_ENABLED && /[ۖۗۘۙۚۛۜ۩۞]/.test(arabicWords[word] ?? '') && word + 1 < value.meta.words}
+			<div data-screenshot-exclude style="align-self: stretch; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 {PAUSE_MARK_SEPARATOR_H_GAP}px; flex-shrink: 0;">
+				<div style="width: {PAUSE_MARK_SEPARATOR_THICKNESS}px; height: {PAUSE_MARK_SEPARATOR_LINE_H}px; background: repeating-linear-gradient(to bottom, {PAUSE_MARK_SEPARATOR_COLOR} 0px, {PAUSE_MARK_SEPARATOR_COLOR} {PAUSE_MARK_SEPARATOR_DASH_LEN}px, transparent {PAUSE_MARK_SEPARATOR_DASH_LEN}px, transparent {PAUSE_MARK_SEPARATOR_DASH_LEN + PAUSE_MARK_SEPARATOR_GAP_LEN}px);"></div>
+			</div>
 		{/if}
 	{/if}
 {/each}
