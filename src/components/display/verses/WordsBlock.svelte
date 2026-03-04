@@ -308,6 +308,14 @@
 		screenshotWord(wordKey, caption, mode);
 	}
 
+	function confirmContextMenuDialogAndSave() {
+		const wordKey = contextMenuDialogWordKey;
+		const caption = contextMenuDialogText;
+		const mode = contextMenuDialogMode;
+		contextMenuDialogOpen = false;
+		screenshotWord(wordKey, caption, mode, true);
+	}
+
 	// Word selection for multi-word screenshots
 	let startWordIndex = null;
 	let stopWordIndex = null;
@@ -531,12 +539,12 @@
 		return `${wordsAudioURL}/${ch}/${String(ch).padStart(3, '0')}_${String(vs).padStart(3, '0')}_${String(wd).padStart(3, '0')}.mp3?version=2`;
 	}
 
-	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audiosBase64 = [], mode = 'arabic') {
+	async function sendScreenshotToServer(filename, canvas, caption = '', audioUrls = [], audiosBase64 = [], mode = 'arabic', sendToPersistent = false) {
 		const dataUrl = canvas.toDataURL('image/png');
 		await fetch('/api/save-screenshot', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audiosBase64, mode })
+			body: JSON.stringify({ filename, dataUrl, caption, audioUrls, audiosBase64, mode, sendToPersistent })
 		});
 	}
 
@@ -701,7 +709,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	return clone;
 } 
 
-async function screenshotMultipleWords(caption = '', mode = 'arabic') {
+async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPersistent = false) {
 	const rangeIndices = new Set();
 	for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
 	rangeIndices.add(anchorWordIndex);
@@ -734,7 +742,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
 		const audiosBase64 = mode === 'tajweed' ? await buildAllReciterAudios(sortedKeys) : [];
 		const audioUrls = mode === 'tajweed' && audiosBase64.length === 0 ? sortedKeys.map(getWordAudioUrl) : [];
-		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64, mode);
+		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64, mode, sendToPersistent);
 
 		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
 		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
@@ -754,7 +762,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 		console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicText}`);
 	}
 
-	async function screenshotSingleWord(wordKey, caption = '', mode = 'arabic') {
+	async function screenshotSingleWord(wordKey, caption = '', mode = 'arabic', sendToPersistent = false) {
 	const wordEl = document.getElementById(wordKey);
 	const wordRect = wordEl.getBoundingClientRect();
 	const totalW = wordRect.width + SCREENSHOT_PAD * 2;
@@ -776,7 +784,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 
 	const canvas = await captureWordVisualsToCanvas(container);
 	const filename = `quranwbw-${wordKey.replaceAll(':', '-')}-${Date.now()}.png`;
-	await sendScreenshotToServer(filename, canvas, caption, mode === 'tajweed' ? [getWordAudioUrl(wordKey)] : [], [], mode);
+	await sendScreenshotToServer(filename, canvas, caption, mode === 'tajweed' ? [getWordAudioUrl(wordKey)] : [], [], mode, sendToPersistent);
 
 	const _wIdx = parseInt(wordKey.split(':')[2]) - 1; // 0-based
 	await sendWordKnowledgeData(
@@ -792,12 +800,12 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 	console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicWords[_wIdx]}`);
 }
 
-	async function screenshotWord(wordKey, caption = '', mode = 'arabic') {
+	async function screenshotWord(wordKey, caption = '', mode = 'arabic', sendToPersistent = false) {
 		playScreenshotPing();
 		if (startWordIndex !== null) {
-			await screenshotMultipleWords(caption, mode);
+			await screenshotMultipleWords(caption, mode, sendToPersistent);
 		} else {
-			await screenshotSingleWord(wordKey, caption, mode);
+			await screenshotSingleWord(wordKey, caption, mode, sendToPersistent);
 		}
 	}
 </script>
@@ -1036,6 +1044,10 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic') {
 					class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 inline-flex items-center justify-center py-2 px-4 rounded-3xl transition-colors duration-150 cursor-pointer text-sm"
 					on:click={() => (contextMenuDialogOpen = false)}
 				>Cancel</button>
+				<button
+					class="inline-flex items-center justify-center py-2 px-4 {window.theme('input')} rounded-3xl transition-colors duration-150 cursor-pointer text-sm {window.theme('hoverBorder')} {window.theme('bgSecondaryLight')}"
+					on:click={confirmContextMenuDialogAndSave}
+				>Save</button>
 				<button
 					class="inline-flex items-center justify-center py-2 px-4 {window.theme('input')} rounded-3xl transition-colors duration-150 cursor-pointer text-sm {window.theme('hoverBorder')} {window.theme('bgSecondaryLight')}"
 					on:click={confirmContextMenuDialog}

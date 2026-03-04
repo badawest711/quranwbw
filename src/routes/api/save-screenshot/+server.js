@@ -1,12 +1,12 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { json, error } from '@sveltejs/kit';
-import { ARABIC_BOT_TOKEN, ARABIC_CHAT_ID, SAVE_LOCAL, ARABIC_SCREENSHOTS_DIR, TAJWEED_BOT_TOKEN, TAJWEED_CHAT_ID, TAJWEED_SCREENSHOTS_DIR } from '$env/static/private';
+import { ARABIC_BOT_TOKEN, ARABIC_CHAT_ID, SAVE_LOCAL, ARABIC_SCREENSHOTS_DIR, TAJWEED_BOT_TOKEN, TAJWEED_CHAT_ID, TAJWEED_SCREENSHOTS_DIR, PERSISTENT_BOT_TOKEN, PERSISTENT_CHAT_ID } from '$env/static/private';
 import { PUBLIC_TELEGRAM_ENABLED } from '$env/static/public';
 
 export async function POST({ request }) {
 	try {
-		const { filename, dataUrl, caption = '', audioUrls = [], audiosBase64 = [], mode = 'arabic' } = await request.json();
+		const { filename, dataUrl, caption = '', audioUrls = [], audiosBase64 = [], mode = 'arabic', sendToPersistent = false } = await request.json();
 		const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
 		const buffer = Buffer.from(base64, 'base64');
 
@@ -69,6 +69,20 @@ export async function POST({ request }) {
 				const audioResult = await audioRes.json();
 				if (!audioResult.ok) throw new Error(`Telegram audio error: ${audioResult.description}`);
 			}
+		}
+
+		if (sendToPersistent && PUBLIC_TELEGRAM_ENABLED === 'true') {
+			const persistentForm = new FormData();
+			persistentForm.append('chat_id', PERSISTENT_CHAT_ID);
+			persistentForm.append('photo', new Blob([buffer], { type: 'image/png' }), filename);
+			if (caption) {
+				persistentForm.append('caption', `<b><i>${caption}</i></b>`);
+				persistentForm.append('parse_mode', 'HTML');
+			}
+			await fetch(`https://api.telegram.org/bot${PERSISTENT_BOT_TOKEN}/sendPhoto`, {
+				method: 'POST',
+				body: persistentForm
+			});
 		}
 
 		return json({ ok: true });
