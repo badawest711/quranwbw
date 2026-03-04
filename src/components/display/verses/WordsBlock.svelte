@@ -1009,6 +1009,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 				<span style="font-family: p{value.meta.page}" class="{v4hafsClasses} custom-ayah-icon-color">{value.words.end}</span>
 			{/if}
 		</span>
+		<span class="font-sans text-lg text-black leading-none">{chapter}:{verse}</span>
 	</div>
 	{#if displayIsContinuous && !$__morphologyModalVisible}
 		<VerseOptionsDropdown page={value.meta.page} />
