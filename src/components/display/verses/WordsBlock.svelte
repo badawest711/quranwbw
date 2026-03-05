@@ -686,6 +686,10 @@
 function buildScreenshotElement(wordKey, includeIndex = false) {
 	const clone = cloneWordElement(wordKey);
 
+	// Pull translation out now so we can re-append it at the bottom
+	const translationEl = clone.querySelector('.wordTranslationText');
+	if (translationEl) translationEl.remove();
+
 	// root label
 	const root = formatRoot(wordKey);
 	if (root) {
@@ -705,6 +709,9 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 		idx.style.cssText = `font-size:${INDEX_LABEL_FONT_SIZE};color:${COLOR_ROOT_TEXT};font-family:sans-serif;`;
 		clone.appendChild(idx);
 	}
+
+	// Re-append translation at the bottom
+	if (translationEl) clone.appendChild(translationEl);
 
 	return clone;
 } 
