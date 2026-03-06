@@ -824,6 +824,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 		{@const arabicLemma = rootDataMap[wordKey]?.[0]?.replace(PAUSE_MARKS_REGEX, '') ?? null}
 		{@const isKnownLemma = !!arabicLemma && $__knownLemmas.has(arabicLemma)}
 		{@const hasProgressBar = WORD_RATIO_PROGRESS_BARS_ENABLED && !isKnownLemma && !!rootDataMap[wordKey] && (SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT || !!rootDataMap[wordKey][1])}
+		{@const showUnknownHighlight = WORD_RATIO_PROGRESS_BARS_ENABLED && !!arabicLemma && !isKnownLemma}
 		{@const showProgressBar = (hoveredWordKey === wordKey && !!rootDataMap[wordKey]) || hasProgressBar}
 		{@const wordCounts = getWordCounts(wordKey)}
 		{@const isHighLemmaCount = (wordCounts?.exactCount ?? 0) > HIGH_LEMMA_COUNT}
@@ -838,7 +839,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 				${anchorWordIndex === word && startWordIndex !== null ? 'ring-2 ring-red-400' : ''}
 				${anchorWordIndex !== word && startWordIndex !== null && word >= startWordIndex && word <= stopWordIndex ? 'ring-2 ring-blue-400' : ''}
 			`.trim()}
-			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? `background-color: ${COLOR_HIGHLIGHT_BG};` : SHOW_RATIO_PROGRESS_BACKGROUND && hasProgressBar ? `background-color: ${isHighLemmaCount ? COLOR_RATIO_PROGRESS_BG_HIGH_LEMMA : COLOR_RATIO_PROGRESS_BG};` : ''}
+			style={WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED && highlightedWordIndices.has(word + 1) ? `background-color: ${COLOR_HIGHLIGHT_BG};` : SHOW_RATIO_PROGRESS_BACKGROUND && showUnknownHighlight ? `background-color: ${isHighLemmaCount ? COLOR_RATIO_PROGRESS_BG_HIGH_LEMMA : COLOR_RATIO_PROGRESS_BG};` : ''}
 			on:click={() => wordClickHandler({ key: wordKey, type: 'word' })}
 		on:contextmenu|preventDefault={() => addToKnownLemma(wordKey)}
 		on:mouseenter={() => { hoveredWordKey = wordKey; }}
