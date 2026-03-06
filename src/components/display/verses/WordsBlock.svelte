@@ -815,6 +815,14 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 			await screenshotSingleWord(wordKey, caption, mode, sendToPersistent);
 		}
 	}
+
+	async function sendRecitationMarker() {
+		await fetch('/api/telegram-message', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text: `${chapter}:${verse}` })
+		});
+	}
 </script>
 
 <!-- words -->
@@ -1007,7 +1015,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 {#if $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && value.words.line[value.words.line.length - 1] === line)}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })}>
+	<div class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker}>
 		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
 			<!-- Everything except Mushaf fonts -->
 			{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
