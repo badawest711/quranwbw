@@ -19,8 +19,8 @@ try {
 	words = [];
 }
 
-// If local file was missing/empty, pull from Gist on first GET
-let initFromGist = words.length === 0;
+// Always pull from Gist on cold start (first GET); local file is just a fallback
+let initFromGist = true;
 
 // Debounce timer — only write to Gist once after a burst of updates
 let gistDebounceTimer = null;
