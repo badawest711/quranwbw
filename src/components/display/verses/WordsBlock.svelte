@@ -472,11 +472,12 @@
 		return result;
 	}
 
-	// Creates an inline ayah-end circle marker (for use inside the screenshot word row)
+	// Creates an inline ayah-end rectangle marker (for use inside the screenshot word row).
+	// Width auto-scales with digit count; only rendered when the selection ends the ayah or crosses to the next.
 	function createAyahEndMarker(verseKey) {
 		const vsNum = verseKey.split(':')[1];
 		const el = document.createElement('div');
-		el.style.cssText = `display:inline-flex;align-items:center;justify-content:center;align-self:center;min-width:28px;height:28px;border-radius:50%;border:1.5px solid #888;font-size:11px;color:${COLOR_MUTED_TEXT};font-family:sans-serif;flex-shrink:0;margin:0 4px;`;
+		el.style.cssText = `display:inline-block;height:26px;line-height:26px;font-size:21px;text-align:center;vertical-align:middle;color:#e53e3e;font-family:sans-serif;margin:0 6px;white-space:nowrap;`;
 		el.textContent = vsNum;
 		return el;
 	}
@@ -926,9 +927,17 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 		wordRow.style.cssText = `display:flex;direction:rtl;align-items:flex-start;flex-wrap:wrap;gap:${SCREENSHOT_GAP}px;`;
 
 		for (let gi = 0; gi < verseGroups.length; gi++) {
-			verseGroups[gi].wordKeys.forEach((wk) => wordRow.appendChild(buildScreenshotElement(wk)));
-			// Ayah-end marker after every verse group (including the last, to always show the verse number)
-			wordRow.appendChild(createAyahEndMarker(verseGroups[gi].verseKey));
+			const grp = verseGroups[gi];
+			grp.wordKeys.forEach((wk) => wordRow.appendChild(buildScreenshotElement(wk)));
+			// Show the ayah-end marker only when:
+			//   • crossing into the next verse group (always), or
+			//   • the last selected word IS the final word of this verse (selection ends the ayah)
+			const isCrossing = gi < verseGroups.length - 1;
+			const lastSelectedWordNum = parseInt(grp.wordKeys[grp.wordKeys.length - 1].split(':')[2]); // 1-based
+			const isAtAyahEnd = lastSelectedWordNum === grp.wordCount;
+			if (isCrossing || isAtAyahEnd) {
+				wordRow.appendChild(createAyahEndMarker(grp.verseKey));
+			}
 		}
 
 		// Label: "2:3:1 – 2:5:4" for multi-verse, "2:3  words 1–4" for single-verse
