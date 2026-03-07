@@ -19,7 +19,7 @@
 	import { websiteTagline } from '$data/websiteSettings';
 	import { __currentPage, __lastRead, __siteNavigationModalVisible, __quranNavigationModalVisible, __userBookmarks, __userNotes, __homepageExtrasPanelVisible, __wideWesbiteLayoutEnabled } from '$utils/stores';
 	import { updateSettings } from '$utils/updateSettings';
-	import { quranMetaData, juzMeta, mostRead } from '$data/quranMeta';
+	import { quranMetaData, juzMeta, mostRead, startPageOfChapters } from '$data/quranMeta';
 	import { term } from '$utils/terminologies';
 	import { disabledClasses } from '$data/commonClasses';
 	import { fetchChapterData, fetchVerseTranslationData } from '$utils/fetchData';
@@ -268,6 +268,11 @@
 												<div class="block text-xs opacity-70">
 													{quranMetaData[id].verses}
 													{term('verses')}
+												</div>
+
+												<!-- chapter pages -->
+												<div class="block text-xs opacity-70">
+													{startPageOfChapters[id + 1] - startPageOfChapters[id]} pages
 												</div>
 											</div>
 										</div>
