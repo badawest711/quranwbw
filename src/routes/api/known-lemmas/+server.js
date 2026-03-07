@@ -25,6 +25,18 @@ let initFromGist = true;
 // Debounce timer — only write to Gist once after a burst of updates
 let gistDebounceTimer = null;
 
+// Poll Gist every 10 minutes to pick up changes made elsewhere
+setInterval(async () => {
+	try {
+		words = await syncFromGist();
+		mkdirSync(PROGRESSION_DIR, { recursive: true });
+		writeFileSync(FILE_PATH, JSON.stringify(words, null, 2));
+		console.log('[known-lemmas] Polled from Gist:', words.length, 'entries');
+	} catch (err) {
+		console.warn('[known-lemmas] Poll failed:', err.message);
+	}
+}, 10 * 60 * 1000);
+
 async function syncFromGist() {
 	const res = await fetch(GIST_URL, { headers: GIST_HEADERS });
 	if (!res.ok) throw new Error(`Gist fetch failed: ${res.status}`);
