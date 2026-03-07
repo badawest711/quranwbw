@@ -326,6 +326,9 @@
 	let sameRootMap = {};
 	let exactWordsMap = {};
 
+	// Saheeh International translation for the ayah icon tooltip
+	let saheehVerseText = '';
+
 	// Tooltip enrichment data (root → lemmas, lemma → english word frequencies)
 	let rootLemmasData   = {};
 	let lemmaWordFreqData = {};
@@ -382,19 +385,22 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	onMount(async () => {
-		const [[rootRes, sameRootRes, exactRes], [rl, lwf]] = await Promise.all([
+		const [[rootRes, sameRootRes, exactRes], [rl, lwf], saheehAll] = await Promise.all([
 			Promise.all([
 				fetchAndCacheJson(morphologyDataUrls.wordUthmaniAndRoots, 'morphology'),
 				fetchAndCacheJson(morphologyDataUrls.wordsWithSameRootKeys, 'morphology'),
 				fetchAndCacheJson(morphologyDataUrls.exactWordsKeys, 'morphology')
 			]),
-			ensureTooltipData()
+			ensureTooltipData(),
+			fetchAndCacheJson(`${staticEndpoint}/verse-translations/20.json?version=1`, 'translation')
 		]);
 		rootDataMap     = rootRes?.data ?? {};
 		sameRootMap     = sameRootRes?.data ?? {};
 		exactWordsMap   = exactRes?.data ?? {};
 		rootLemmasData  = rl;
 		lemmaWordFreqData = lwf;
+		const verseData = saheehAll?.[`${chapter}:${verse}`];
+		saheehVerseText = (typeof verseData === 'string' ? verseData : verseData?.text ?? '').replace(/<[^>]*>/g, '');
 	});
 
 	function formatRoot(wordKey) {
@@ -1032,14 +1038,14 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 		</span>
 		<span class="font-sans text-lg text-black leading-none">{chapter}:{verse}</span>
 	</div>
+	<!-- end icon tooltip — must be immediately after the div so Flowbite can attach to it -->
+	<Tooltip arrow={false} type="light" class="z-[19] font-sans font-normal max-w-sm text-center ring-1 ring-black bg-[#7FFFD4]">
+		<div class="text-[10px] font-bold opacity-60 mb-1">{key} · Saheeh International</div>
+		<div class="text-xs leading-snug">{saheehVerseText || `End of ${key}`}</div>
+	</Tooltip>
 	{#if displayIsContinuous && !$__morphologyModalVisible}
 		<VerseOptionsDropdown page={value.meta.page} />
 	{/if}
-
-	<!-- end icon tooltip -->
-	<Tooltip arrow={false} type="light" class="z-[19] inline-flex font-sans font-normal">
-		End of {key}
-	</Tooltip>
 {/if}
 
 {#if contextMenuDialogOpen}
