@@ -85,8 +85,6 @@
 	const COLOR_RATIO_PROGRESS_BG_HIGH_LEMMA = 'rgba(220,30,30,0.08)';
 	const HIGH_LEMMA_COUNT = 15;
 
-	const ROOT_LETTER_OUTLINING_ENABLED = true;
-
 	// Screenshot & Audio
 	const SCREENSHOT_PAD = 8;
 	const SCREENSHOT_GAP = 4;
@@ -522,32 +520,11 @@
 		const el = document.getElementById(wordKey);
 		const clone = el.cloneNode(true);
 		clone.querySelectorAll('[data-screenshot-exclude]').forEach((e) => e.remove());
-		const origArabicEl = el.querySelector('.arabicText');
 		const arabicEl = clone.querySelector('.arabicText');
-		if (ROOT_LETTER_OUTLINING_ENABLED) {
-			const arabicRect = origArabicEl.getBoundingClientRect();
-			const rootRects = Array.from(origArabicEl.querySelectorAll('span')).map((s) => {
-				const r = s.getBoundingClientRect();
-				return { left: r.left - arabicRect.left, top: r.top - arabicRect.top, width: r.width, height: r.height };
-			});
-			const plainText = arabicEl.textContent;
-			arabicEl.textContent = plainText;
-			arabicEl.style.position = 'relative';
-			arabicEl.style.setProperty('color', 'green', 'important');
-			const totalW = arabicRect.width;
-			rootRects.forEach(({ left, top, width, height }) => {
-				const wrapper = document.createElement('div');
-				wrapper.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;overflow:hidden;`;
-				const inner = document.createElement('span');
-				inner.textContent = plainText;
-				inner.style.cssText = `position:absolute;top:${-top}px;left:${-left}px;width:${totalW}px;color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;`;
-				wrapper.appendChild(inner);
-				arabicEl.appendChild(wrapper);
-			});
-		} else {
-			arabicEl.textContent = arabicEl.textContent;
-			arabicEl.style.setProperty('color', 'green', 'important');
-		}
+		arabicEl.textContent = arabicEl.textContent;
+		arabicEl.style.setProperty('color', 'black', 'important');
+		arabicEl.style.webkitTextStroke = '2px white';
+		arabicEl.style.paintOrder = 'stroke fill';
 		clone.classList.remove('ring-2', 'ring-blue-400', 'ring-red-400');
 		clone.style.cssText += 'position:relative;flex:0 0 auto;gap:' + WORD_GAP_SIZE + 'px;';
 		return clone;
@@ -743,39 +720,6 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	return clone;
 }
 
-function colorRootLetters(text, wordKey, rootMap) {
-	if (!text) return text;
-	const root = rootMap?.[wordKey]?.[1];
-	const DIACRITICS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g;
-	const SHADDA = '\u0651';
-	const WEAK = new Set(['ا', 'أ', 'إ', 'آ', 'ى', 'ٱ', 'و', 'ي']);
-	const seg = new Intl.Segmenter();
-	const wordSegs = [...seg.segment(text)].map((s) => s.segment);
-	const normalize = (s) => s.replace(DIACRITICS, '').replace(/[آأإٱ]/g, 'ا');
-	const wBases = wordSegs.map(normalize);
-	const hits = new Set();
-	if (root) {
-		const rootSegs = [...seg.segment(root)].map((s) => s.segment);
-		const rBases = rootSegs.map(normalize);
-		let ri = 0;
-		for (let wi = 0; wi < wBases.length && ri < rBases.length; wi++) {
-			const wb = wBases[wi];
-			const rb = rBases[ri];
-			const isMatch = wb === rb || (WEAK.has(wb) && WEAK.has(rb));
-			if (isMatch) {
-				hits.add(wi);
-				ri++;
-				// A letter with shadda counts as two of the same letter — consume the next root letter too if it matches
-				if (wordSegs[wi].includes(SHADDA) && ri < rBases.length) {
-					const nb = rBases[ri];
-					if (wb === nb || (WEAK.has(wb) && WEAK.has(nb))) ri++;
-				}
-			}
-		}
-		if (ri < rBases.length) hits.clear();
-	}
-	return wordSegs.map((s, i) => (hits.has(i) ? `<span style="color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;">${s}</span>` : s)).join('');
-}
 
 async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPersistent = false) {
 	const rangeIndices = new Set();
@@ -999,10 +943,10 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 				>✕</span>
 			{/if}
 
-			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
+			<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText} style="color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;">
 				<!-- Everything except Mushaf fonts -->
 				{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
-					{@html ROOT_LETTER_OUTLINING_ENABLED && !isKnownLemma ? colorRootLetters(arabicWords[word], wordKey, rootDataMap) : arabicWords[word]}
+					{arabicWords[word]}
 					<!-- Mushaf fonts -->
 				{:else}
 					<span id="word-{wordKey.split(':')[1]}-{wordKey.split(':')[2]}" style="font-family: p{value.meta.page}" class={v4hafsClasses}>
@@ -1077,7 +1021,7 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker}>
-		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText}>
+		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText} style="color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;">
 			<!-- Everything except Mushaf fonts -->
 			{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
 				<span class="colored-fonts">{value.words.end}</span>
