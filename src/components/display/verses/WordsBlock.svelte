@@ -174,6 +174,13 @@
 	 * Routes to morphology, modal, audio, or bookmarks based on context.
 	 */
 	function wordClickHandler(props) {
+		if (props.type === 'word' && anchorWordIndex !== null && startWordIndex !== null) {
+			const clickedIdx = parseInt(props.key.split(':')[2]) - 1; // convert 1-based key to 0-based
+			if (clickedIdx === anchorWordIndex) {
+				playWordGroupAudio();
+				return;
+			}
+		}
 		if ($__currentPage === PAGE_MORPHOLOGY && props.type === 'word') {
 			__morphologyKey.set(props.key);
 			goto(`/morphology?word=${props.key}`, { replaceState: false });
@@ -509,6 +516,21 @@
 		startWordIndex = null;
 		stopWordIndex = null;
 		anchorWordIndex = null;
+	}
+
+	async function playWordGroupAudio() {
+		const rangeIndices = new Set();
+		for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
+		rangeIndices.add(anchorWordIndex);
+		const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+
+		const mishary = Object.values(selectableReciters).find((r) => r.reciter === RECITERS_FOR_AUDIO[0]);
+		if (!mishary) return;
+
+		const result = await buildVerseClipBase64ForReciter(sortedKeys, mishary);
+		if (!result) return;
+
+		new Audio(`data:audio/${result.format};base64,${result.base64}`).play();
 	}
 
 	function syncWordKnowledgeEntry(entry) {
