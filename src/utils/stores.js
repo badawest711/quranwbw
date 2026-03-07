@@ -225,6 +225,12 @@ if (browser) {
 	__knownLemmas = writable(new Set());
 }
 
+// Global cross-verse word selection state (session-only, no persistence needed).
+// Shape: null | { anchor: {verse, idx}, start: {verse, idx}, stop: {verse, idx} }
+// where verse = 'ch:vs' string, idx = 0-based word index within that verse.
+// Sentinel idx 9999 = "last word of that verse" (resolved by each WordsBlock).
+export const __wordSelection = writable(null);
+
 export {
 	__currentPage,
 	__chapterNumber,

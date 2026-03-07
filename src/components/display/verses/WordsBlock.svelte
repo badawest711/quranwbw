@@ -39,7 +39,7 @@
 	import { onMount } from 'svelte';
 	import { selectableDisplays, selectableWordTranslations, selectableWordTransliterations, selectableReciters } from '$data/options';
 	import { supplicationsFromQuran } from '$data/quranMeta';
-	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge, __knownLemmas, __reciter } from '$utils/stores';
+	import { __currentPage, __fontType, __displayType, __userSettings, __audioSettings, __morphologyKey, __verseKey, __websiteTheme, __morphologyModalVisible, __wordMorphologyOnClick, __wordTranslation, __wordTransliteration, __wordTranslationEnabled, __wordTransliterationEnabled, __wordTooltip, __hideNonDuaPart, __signLanguageModeEnabled, __wordKnowledge, __knownLemmas, __reciter, __chapterData, __wordSelection } from '$utils/stores';
 	import { loadFont } from '$utils/loadFont';
 	import { wordAudioController } from '$utils/audioController';
 	import { updateSettings } from '$utils/updateSettings';
@@ -365,10 +365,34 @@
 		aiNotifications = aiNotifications.filter(n => n.id !== id);
 	}
 
-	// Word selection for multi-word screenshots
+	// Word selection — derived reactively from the global __wordSelection store.
+	// null when this verse has no overlap with the active selection.
 	let startWordIndex = null;
 	let stopWordIndex = null;
-	let anchorWordIndex = null;
+	let anchorWordIndex = null; // null when anchor is in a different verse
+
+	$: {
+		const sel = $__wordSelection;
+		if (!sel) {
+			startWordIndex = null;
+			stopWordIndex = null;
+			anchorWordIndex = null;
+		} else {
+			const before = verseLt(key, sel.start.verse) || (verseEq(key, sel.start.verse) && false); // never fully before if eq
+			const strictBefore = verseLt(key, sel.start.verse);
+			const strictAfter  = verseGt(key, sel.stop.verse);
+			if (strictBefore || strictAfter) {
+				startWordIndex = null;
+				stopWordIndex  = null;
+				anchorWordIndex = null;
+			} else {
+				const wc = value.meta.words;
+				startWordIndex  = verseEq(sel.start.verse, key) ? Math.min(sel.start.idx, wc - 1) : 0;
+				stopWordIndex   = verseEq(sel.stop.verse,  key) ? Math.min(sel.stop.idx,  wc - 1) : wc - 1;
+				anchorWordIndex = verseEq(sel.anchor.verse, key) ? sel.anchor.idx : null;
+			}
+		}
+	}
 
 	// Morphology data caches
 	let rootDataMap = {};
@@ -420,6 +444,42 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 	// UTILITY FUNCTIONS
 	// ═══════════════════════════════════════════════════════════════════════════
+
+	// Verse key comparison helpers ('ch:vs' strings, numeric ordering)
+	function verseParts(v) { return v.split(':').map(Number); }
+	function verseLt(a, b) { const [ac,av]=verseParts(a),[bc,bv]=verseParts(b); return ac<bc||(ac===bc&&av<bv); }
+	function verseGt(a, b) { return verseLt(b, a); }
+	function verseEq(a, b) { return a === b; }
+
+	// Returns [{verseKey, wordKeys, wordCount}] for every verse that overlaps the selection,
+	// using $__chapterData to resolve word counts (needed for cross-verse support).
+	function collectSelectionByVerse(sel) {
+		const result = [];
+		const [startCh, startVs] = verseParts(sel.start.verse);
+		const [stopCh,  stopVs]  = verseParts(sel.stop.verse);
+		// Assumes same chapter; for cross-chapter selections iterate chapters too if needed
+		for (let vs = startVs; vs <= stopVs; vs++) {
+			const vk = `${startCh}:${vs}`;
+			const verseData = $__chapterData[vk];
+			if (!verseData) continue;
+			const wc = verseData.meta.words;
+			const lo = verseEq(sel.start.verse, vk) ? Math.min(sel.start.idx, wc - 1) : 0;
+			const hi = verseEq(sel.stop.verse,  vk) ? Math.min(sel.stop.idx,  wc - 1) : wc - 1;
+			const wordKeys = [];
+			for (let w = lo; w <= hi; w++) wordKeys.push(`${vk}:${w + 1}`);
+			if (wordKeys.length) result.push({ verseKey: vk, wordKeys, wordCount: wc });
+		}
+		return result;
+	}
+
+	// Creates an inline ayah-end circle marker (for use inside the screenshot word row)
+	function createAyahEndMarker(verseKey) {
+		const vsNum = verseKey.split(':')[1];
+		const el = document.createElement('div');
+		el.style.cssText = `display:inline-flex;align-items:center;justify-content:center;align-self:center;min-width:28px;height:28px;border-radius:50%;border:1.5px solid #888;font-size:11px;color:${COLOR_MUTED_TEXT};font-family:sans-serif;flex-shrink:0;margin:0 4px;`;
+		el.textContent = vsNum;
+		return el;
+	}
 
 	function shouldDisplayWord(wordIndex) {
 		return $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && +value.words.line[wordIndex] === line);
@@ -489,48 +549,102 @@
 	// ═══════════════════════════════════════════════════════════════════════════
 
 	function selectAdjacentWord(currentWordIndex, direction) {
-		anchorWordIndex = currentWordIndex;
+		const myVerse = key; // 'ch:vs'
+		const wc = value.meta.words;
+		const anchor = { verse: myVerse, idx: currentWordIndex };
+		const sel = $__wordSelection;
+		const vs = parseInt(verse);
 
-		if (startWordIndex === null) {
-			// First selection — pick the immediate neighbour
-			const target = currentWordIndex + direction;
-			if (target < 0 || target >= value.meta.words) return;
-			startWordIndex = target;
-			stopWordIndex = target;
-		} else if (direction === 1) {
-			// Extend upper boundary (higher index = left in RTL)
-			let next = stopWordIndex + 1;
-			if (next === currentWordIndex) next++;
-			if (next >= value.meta.words) return;
-			stopWordIndex = next;
+		if (!sel) {
+			// ── First click: start a new selection with one neighbour ──────────
+			if (direction > 0) {
+				if (currentWordIndex + 1 < wc) {
+					__wordSelection.set({ anchor, start: anchor, stop: { verse: myVerse, idx: currentWordIndex + 1 } });
+				} else {
+					// last word → jump to first word of next verse
+					__wordSelection.set({ anchor, start: anchor, stop: { verse: `${chapter}:${vs + 1}`, idx: 0 } });
+				}
+			} else {
+				if (currentWordIndex - 1 >= 0) {
+					__wordSelection.set({ anchor, start: { verse: myVerse, idx: currentWordIndex - 1 }, stop: anchor });
+				} else if (vs > 1) {
+					// first word → jump to last word of previous verse (sentinel 9999 clamped by that WordsBlock)
+					__wordSelection.set({ anchor, start: { verse: `${chapter}:${vs - 1}`, idx: 9999 }, stop: anchor });
+				}
+			}
+			return;
+		}
+
+		// ── Selection already active: move anchor, extend the right boundary ──
+		if (direction > 0) {
+			// Extend stop (left in RTL = forward in reading)
+			if (verseEq(sel.stop.verse, myVerse)) {
+				let next = sel.stop.idx + 1;
+				if (next === currentWordIndex) next++;
+				if (next < wc) {
+					__wordSelection.set({ anchor, start: sel.start, stop: { verse: myVerse, idx: next } });
+				} else {
+					__wordSelection.set({ anchor, start: sel.start, stop: { verse: `${chapter}:${vs + 1}`, idx: 0 } });
+				}
+			} else {
+				// Stop is already in a later verse — keep extending within that verse
+				const stopWc = $__chapterData[sel.stop.verse]?.meta?.words ?? 0;
+				const [stopCh, stopVs] = sel.stop.verse.split(':').map(Number);
+				let next = sel.stop.idx + 1;
+				if (next < stopWc) {
+					__wordSelection.set({ anchor, start: sel.start, stop: { verse: sel.stop.verse, idx: next } });
+				} else {
+					__wordSelection.set({ anchor, start: sel.start, stop: { verse: `${stopCh}:${stopVs + 1}`, idx: 0 } });
+				}
+			}
 		} else {
-			// Extend lower boundary (lower index = right in RTL)
-			let next = startWordIndex - 1;
-			if (next === currentWordIndex) next--;
-			if (next < 0) return;
-			startWordIndex = next;
+			// Extend start (right in RTL = backward in reading)
+			if (verseEq(sel.start.verse, myVerse)) {
+				let next = sel.start.idx - 1;
+				if (next === currentWordIndex) next--;
+				if (next >= 0) {
+					__wordSelection.set({ anchor, start: { verse: myVerse, idx: next }, stop: sel.stop });
+				} else if (vs > 1) {
+					__wordSelection.set({ anchor, start: { verse: `${chapter}:${vs - 1}`, idx: 9999 }, stop: sel.stop });
+				}
+			} else {
+				// Start is already in an earlier verse — keep extending within that verse
+				const startWc = $__chapterData[sel.start.verse]?.meta?.words ?? 0;
+				const [startCh, startVs] = sel.start.verse.split(':').map(Number);
+				let next = Math.min(sel.start.idx, startWc - 1) - 1; // clamp sentinel 9999 first
+				if (next >= 0) {
+					__wordSelection.set({ anchor, start: { verse: sel.start.verse, idx: next }, stop: sel.stop });
+				} else if (startVs > 1) {
+					__wordSelection.set({ anchor, start: { verse: `${startCh}:${startVs - 1}`, idx: 9999 }, stop: sel.stop });
+				}
+			}
 		}
 	}
 
 	function clearHighlights() {
-		startWordIndex = null;
-		stopWordIndex = null;
-		anchorWordIndex = null;
+		__wordSelection.set(null);
 	}
 
 	async function playWordGroupAudio() {
-		const rangeIndices = new Set();
-		for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
-		rangeIndices.add(anchorWordIndex);
-		const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+		const sel = $__wordSelection;
+		if (!sel) return;
+
+		const verseGroups = collectSelectionByVerse(sel);
+		if (!verseGroups.length) return;
 
 		const mishary = Object.values(selectableReciters).find((r) => r.reciter === RECITERS_FOR_AUDIO[0]);
 		if (!mishary) return;
 
-		const result = await buildVerseClipBase64ForReciter(sortedKeys, mishary);
-		if (!result) return;
+		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
+		const slices = [];
+		for (const { verseKey, wordKeys } of verseGroups) {
+			const pcm = await buildVerseClipPCMForReciter(verseKey, wordKeys, mishary, timestampData);
+			if (pcm) slices.push(pcm);
+		}
+		if (!slices.length) return;
 
-		new Audio(`data:audio/${result.format};base64,${result.base64}`).play();
+		const base64 = await encodePCMSlicesToMp3Base64(slices);
+		new Audio(`data:audio/mp3;base64,${base64}`).play();
 	}
 
 	function syncWordKnowledgeEntry(entry) {
@@ -633,105 +747,112 @@
 		return btoa(binary);
 	}
 
-	// Core: fetches verse audio for a specific reciter and either slices it to the word range
-	// (when timestamps exist) or falls back to the full verse MP3.
-	// Returns { base64, format } or null on fetch failure.
-	async function buildVerseClipBase64ForReciter(sortedKeys, reciter) {
-		const ch = parseInt(chapter);
-		const vs = parseInt(verse);
+	// Fetches and slices one verse's PCM for a reciter.
+	// Returns { sampleRate, numChannels, left: Float32Array, right: Float32Array|null }
+	// or null on failure. Falls back to full verse PCM when timestamps are unavailable.
+	async function buildVerseClipPCMForReciter(verseKey, wordKeys, reciter, timestampData) {
+		const [ch, vs] = verseKey.split(':').map(Number);
 		const verseAudioUrl = `${reciter.url}/${String(ch).padStart(3, '0')}${String(vs).padStart(3, '0')}.mp3`;
 
-		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
-		const verseTimestampStr = timestampData?.data?.[ch]?.[vs]?.[reciter.id];
-
-		if (!verseTimestampStr) {
-			console.log(`[Audio] ${reciter.reciter} (id:${reciter.id}): no timestamps in timestamps.json → sending full verse MP3`);
-			const resp = await fetch(verseAudioUrl);
-			if (!resp.ok) {
-				console.warn(`[Audio] ${reciter.reciter}: failed to fetch verse audio (HTTP ${resp.status})`);
-				return null;
-			}
-			return { base64: arrayBufferToBase64(await resp.arrayBuffer()), format: 'mp3' };
-		}
-
-		console.log(`[Audio] ${reciter.reciter} (id:${reciter.id}): timestamps found, building sliced MP3 clip`);
-		const timestamps = verseTimestampStr.split('|').map(Number);
-
-		// sortedKeys are like "2:5:3" — word number is 1-based; timestamp index is 0-based
-		const firstWordNum = parseInt(sortedKeys[0].split(':')[2]);
-		const lastWordNum = parseInt(sortedKeys[sortedKeys.length - 1].split(':')[2]);
-		const startTime = timestamps[firstWordNum - 1] ?? 0;
-		const endTime = timestamps[lastWordNum] ?? null; // null = clip to audio end
-
-		const verseResp = await fetch(verseAudioUrl);
-		if (!verseResp.ok) {
-			console.warn(`[Audio] ${reciter.reciter}: failed to fetch verse audio (HTTP ${verseResp.status})`);
+		const resp = await fetch(verseAudioUrl);
+		if (!resp.ok) {
+			console.warn(`[Audio] ${reciter.reciter}: failed to fetch verse audio (HTTP ${resp.status})`);
 			return null;
 		}
-		const verseArrayBuffer = await verseResp.arrayBuffer();
-
 		const audioCtx = new AudioContext();
-		const audioBuffer = await audioCtx.decodeAudioData(verseArrayBuffer);
+		const audioBuffer = await audioCtx.decodeAudioData(await resp.arrayBuffer());
 		await audioCtx.close();
 
-		const sampleRate = audioBuffer.sampleRate;
-		const numChannels = audioBuffer.numberOfChannels;
-		const startSample = Math.floor(startTime * sampleRate);
-		const endSample = endTime !== null ? Math.floor(endTime * sampleRate) : audioBuffer.length;
-		const sliceLength = Math.max(0, Math.min(endSample, audioBuffer.length) - startSample);
-
-		// Encode slice as MP3 via lamejs
-		const { Mp3Encoder } = await import('@breezystack/lamejs');
-		const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
-		const pcmToInt16 = (f32) => Math.max(-32768, Math.min(32767, f32 < 0 ? f32 * 32768 : f32 * 32767));
-
-		const left = new Int16Array(sliceLength);
-		const right = numChannels > 1 ? new Int16Array(sliceLength) : null;
-		const leftData = audioBuffer.getChannelData(0);
+		const { sampleRate, numberOfChannels: numChannels } = audioBuffer;
+		const leftData  = audioBuffer.getChannelData(0);
 		const rightData = numChannels > 1 ? audioBuffer.getChannelData(1) : null;
-		for (let i = 0; i < sliceLength; i++) {
-			left[i] = pcmToInt16(leftData[startSample + i]);
-			if (right) right[i] = pcmToInt16(rightData[startSample + i]);
+
+		let startSample = 0;
+		let endSample   = audioBuffer.length;
+
+		const verseTimestampStr = timestampData?.data?.[ch]?.[vs]?.[reciter.id];
+		if (verseTimestampStr) {
+			const timestamps = verseTimestampStr.split('|').map(Number);
+			const firstWordNum = parseInt(wordKeys[0].split(':')[2]);
+			const lastWordNum  = parseInt(wordKeys[wordKeys.length - 1].split(':')[2]);
+			startSample = Math.floor((timestamps[firstWordNum - 1] ?? 0) * sampleRate);
+			const endTime = timestamps[lastWordNum] ?? null;
+			endSample = endTime !== null ? Math.floor(endTime * sampleRate) : audioBuffer.length;
 		}
 
-		const chunkSize = 1152; // lamejs required frame size
-		const mp3Parts = [];
-		for (let i = 0; i < sliceLength; i += chunkSize) {
-			const l = left.subarray(i, i + chunkSize);
-			const r = right ? right.subarray(i, i + chunkSize) : l;
-			const chunk = encoder.encodeBuffer(l, r);
-			if (chunk.length > 0) mp3Parts.push(chunk);
-		}
-		const flushed = encoder.flush();
-		if (flushed.length > 0) mp3Parts.push(flushed);
-
-		const mp3Buf = new Uint8Array(mp3Parts.reduce((acc, p) => acc + p.length, 0));
-		let offset = 0;
-		for (const part of mp3Parts) { mp3Buf.set(part, offset); offset += part.length; }
-
-		return { base64: arrayBufferToBase64(mp3Buf.buffer), format: 'mp3' };
+		const len = Math.max(0, Math.min(endSample, audioBuffer.length) - startSample);
+		const left  = leftData.slice(startSample, startSample + len);
+		const right = rightData ? rightData.slice(startSample, startSample + len) : null;
+		return { sampleRate, numChannels, left, right };
 	}
 
-	// Builds an audio entry for each reciter in RECITERS_FOR_AUDIO in parallel.
-	// Returns an array of { name, base64, format } for successful fetches.
-	async function buildAllReciterAudios(sortedKeys) {
+	// Encodes an array of PCM slices (concatenated) into a base64 MP3 string.
+	async function encodePCMSlicesToMp3Base64(slices) {
+		const { Mp3Encoder } = await import('@breezystack/lamejs');
+		const { sampleRate, numChannels } = slices[0];
+		const totalLen = slices.reduce((s, sl) => s + sl.left.length, 0);
+		const pcmToInt16 = (f) => Math.max(-32768, Math.min(32767, f < 0 ? f * 32768 : f * 32767));
+
+		const leftI16  = new Int16Array(totalLen);
+		const rightI16 = numChannels > 1 ? new Int16Array(totalLen) : null;
+		let off = 0;
+		for (const sl of slices) {
+			for (let i = 0; i < sl.left.length; i++) {
+				leftI16[off + i] = pcmToInt16(sl.left[i]);
+				if (rightI16) rightI16[off + i] = pcmToInt16(sl.right[i]);
+			}
+			off += sl.left.length;
+		}
+
+		const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
+		const chunkSize = 1152;
+		const mp3Parts = [];
+		for (let i = 0; i < totalLen; i += chunkSize) {
+			const l = leftI16.subarray(i, i + chunkSize);
+			const r = rightI16 ? rightI16.subarray(i, i + chunkSize) : l;
+			const chunk = encoder.encodeBuffer(l, r);
+			if (chunk.length) mp3Parts.push(chunk);
+		}
+		const flushed = encoder.flush();
+		if (flushed.length) mp3Parts.push(flushed);
+
+		const mp3Buf = new Uint8Array(mp3Parts.reduce((s, p) => s + p.length, 0));
+		let o = 0;
+		for (const p of mp3Parts) { mp3Buf.set(p, o); o += p.length; }
+		return arrayBufferToBase64(mp3Buf.buffer);
+	}
+
+	// Single-verse convenience wrapper (keeps old call-sites working).
+	async function buildVerseClipBase64ForReciter(sortedKeys, reciter) {
+		const verseKey = `${sortedKeys[0].split(':')[0]}:${sortedKeys[0].split(':')[1]}`;
+		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
+		const pcm = await buildVerseClipPCMForReciter(verseKey, sortedKeys, reciter, timestampData);
+		if (!pcm) return null;
+		return { base64: await encodePCMSlicesToMp3Base64([pcm]), format: 'mp3' };
+	}
+
+	// Multi-verse: builds one { name, base64, format } per reciter, concatenating audio
+	// from every verse group in the selection.
+	async function buildAllReciterAudiosMultiVerse(verseGroups) {
 		const reciterObjects = RECITERS_FOR_AUDIO
 			.map((name) => Object.values(selectableReciters).find((r) => r.reciter === name))
 			.filter(Boolean);
 
-		console.log(`[Audio] Building audio for ${reciterObjects.length} reciters:`, reciterObjects.map((r) => `${r.reciter} (id:${r.id})`));
+		console.log(`[Audio] Building multi-verse audio for ${reciterObjects.length} reciters`);
+		const timestampData = await fetchAndCacheJson(`${staticEndpoint}/timestamps/timestamps.json?version=2`, 'other');
 
-		const results = await Promise.all(
-			reciterObjects.map(async (reciter) => {
-				const result = await buildVerseClipBase64ForReciter(sortedKeys, reciter);
-				if (!result) {
-					console.warn(`[Audio] ${reciter.reciter}: no audio produced, skipping`);
-					return null;
-				}
-				console.log(`[Audio] ${reciter.reciter}: ready (${result.format}, ~${Math.round(result.base64.length * 0.75 / 1024)} KB)`);
-				return { name: reciter.reciter, base64: result.base64, format: result.format };
-			})
-		);
+		const results = await Promise.all(reciterObjects.map(async (reciter) => {
+			const slices = [];
+			for (const { verseKey, wordKeys } of verseGroups) {
+				const pcm = await buildVerseClipPCMForReciter(verseKey, wordKeys, reciter, timestampData);
+				if (pcm) slices.push(pcm);
+			}
+			if (!slices.length) return null;
+			const base64 = await encodePCMSlicesToMp3Base64(slices);
+			console.log(`[Audio] ${reciter.reciter}: ready (~${Math.round(base64.length * 0.75 / 1024)} KB)`);
+			return { name: reciter.reciter, base64, format: 'mp3' };
+		}));
+
 		const filtered = results.filter(Boolean);
 		console.log(`[Audio] Final: ${filtered.length}/${reciterObjects.length} reciters have audio`);
 		return filtered;
@@ -791,26 +912,36 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 }
 
 
-async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPersistent = false) {
-	const rangeIndices = new Set();
-	for (let i = startWordIndex; i <= stopWordIndex; i++) rangeIndices.add(i);
-	rangeIndices.add(anchorWordIndex);
-	const sortedKeys = Array.from(rangeIndices).sort((a, b) => a - b).map((i) => getWordKey(i));
+	async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPersistent = false) {
+		const sel = $__wordSelection;
+		if (!sel) return;
 
-	const wordRow = document.createElement('div');
-	wordRow.style.cssText = 'display:flex;direction:rtl;align-items:flex-start;gap:' + SCREENSHOT_GAP + 'px;';
+		const verseGroups = collectSelectionByVerse(sel);
+		if (!verseGroups.length) return;
+		const allWordKeys = verseGroups.flatMap((g) => g.wordKeys);
 
-	sortedKeys.forEach((key) => {
-		const el = buildScreenshotElement(key); // clone with internal labels
-		wordRow.appendChild(el);
-	});
+		// ── Build screenshot DOM ─────────────────────────────────────────────
+		// All words go in a single RTL flex row; ayah-end markers sit between verse groups.
+		const wordRow = document.createElement('div');
+		wordRow.style.cssText = `display:flex;direction:rtl;align-items:flex-start;flex-wrap:wrap;gap:${SCREENSHOT_GAP}px;`;
 
-		const startNum = startWordIndex + 1;
-		const stopNum = stopWordIndex + 1;
+		for (let gi = 0; gi < verseGroups.length; gi++) {
+			verseGroups[gi].wordKeys.forEach((wk) => wordRow.appendChild(buildScreenshotElement(wk)));
+			// Ayah-end marker after every verse group (including the last, to always show the verse number)
+			wordRow.appendChild(createAyahEndMarker(verseGroups[gi].verseKey));
+		}
+
+		// Label: "2:3:1 – 2:5:4" for multi-verse, "2:3  words 1–4" for single-verse
+		const firstGroup = verseGroups[0];
+		const lastGroup  = verseGroups[verseGroups.length - 1];
+		const firstWNum  = parseInt(firstGroup.wordKeys[0].split(':')[2]);
+		const lastWNum   = parseInt(lastGroup.wordKeys[lastGroup.wordKeys.length - 1].split(':')[2]);
+		const labelText  = verseGroups.length > 1
+			? `${firstGroup.verseKey}:${firstWNum} – ${lastGroup.verseKey}:${lastWNum}`
+			: (firstWNum === lastWNum ? `${firstGroup.verseKey}  word ${firstWNum}` : `${firstGroup.verseKey}  words ${firstWNum}–${lastWNum}`);
+
 		const label = document.createElement('div');
-		label.textContent = startNum === stopNum
-			? `${chapter}:${verse}  word ${startNum}`
-			: `${chapter}:${verse}  words ${startNum}–${stopNum}`;
+		label.textContent = labelText;
 		label.style.cssText = `text-align:center;font-size:${LABEL_SECTION_FONT_SIZE};color:${COLOR_MUTED_TEXT};font-family:sans-serif;margin-top:4px;`;
 
 		const wrapper = document.createElement('div');
@@ -820,28 +951,29 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 
 		const canvas = await captureWordVisualsToCanvas(wrapper);
 
-		const wordRange = sortedKeys.map((k) => k.split(':')[2]).join('-');
-		const filename = `quranwbw-${chapter}-${verse}-w${wordRange}-${Date.now()}.png`;
-		const audiosBase64 = mode === 'tajweed' ? await buildAllReciterAudios(sortedKeys) : [];
-		const audioUrls = mode === 'tajweed' && audiosBase64.length === 0 ? sortedKeys.map(getWordAudioUrl) : [];
+		// ── Filename & audio ─────────────────────────────────────────────────
+		const rangeStr   = `${firstGroup.verseKey.replace(':', '-')}w${firstWNum}_${lastGroup.verseKey.replace(':', '-')}w${lastWNum}`;
+		const filename   = `quranwbw-${rangeStr}-${Date.now()}.png`;
+		const audiosBase64 = mode === 'tajweed' ? await buildAllReciterAudiosMultiVerse(verseGroups) : [];
+		const audioUrls    = mode === 'tajweed' && !audiosBase64.length ? allWordKeys.map(getWordAudioUrl) : [];
+
 		await sendScreenshotToServer(filename, canvas, caption, audioUrls, audiosBase64, mode, sendToPersistent);
 
-		const wordIndices = sortedKeys.map((k) => parseInt(k.split(':')[2])); // 1-based
-		const arabicText = sortedKeys.map((k) => arabicWords[parseInt(k.split(':')[2]) - 1]).join(' ');
-		const translationText = sortedKeys.map((k) => translationWords[parseInt(k.split(':')[2]) - 1]).join(' ');
-		const roots = sortedKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
+		// ── Word-knowledge entry (anchor verse only) ─────────────────────────
+		const anchorVerseKey = sel.anchor.verse;
+		const anchorGroup    = verseGroups.find((g) => g.verseKey === anchorVerseKey) ?? firstGroup;
+		const anchorVData    = $__chapterData[anchorGroup.verseKey];
+		if (anchorVData) {
+			const [aCh, aVs] = anchorGroup.verseKey.split(':').map(Number);
+			const wIdxs      = anchorGroup.wordKeys.map((k) => parseInt(k.split(':')[2]));
+			const arabicText = anchorGroup.wordKeys.map((k) => anchorVData.words.arabic[parseInt(k.split(':')[2]) - 1]).join(' ');
+			const transText  = anchorGroup.wordKeys.map((k) => anchorVData.words.translation[parseInt(k.split(':')[2]) - 1]).join(' ');
+			const roots      = anchorGroup.wordKeys.map((k) => rootDataMap[k]?.[1]).filter(Boolean);
+			await sendWordKnowledgeData(aCh, aVs, Math.min(...wIdxs), Math.max(...wIdxs), arabicText, transText, roots.join(' / ') || null);
+		}
 
-		await sendWordKnowledgeData(
-			parseInt(chapter),
-			parseInt(verse),
-			Math.min(...wordIndices),
-			Math.max(...wordIndices),
-			arabicText,
-			translationText,
-			roots.length ? roots.join(' / ') : null
-		);
-
-		console.warn(`[Screenshot] Sent to Telegram: ${filename} | Arabic: ${arabicText}`);
+		playScreenshotPing();
+		console.warn(`[Screenshot] Sent: ${filename} | groups: ${verseGroups.length}`);
 	}
 
 	async function screenshotSingleWord(wordKey, caption = '', mode = 'arabic', sendToPersistent = false) {
