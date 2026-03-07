@@ -1250,12 +1250,11 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	</div>
 	<!-- end icon tooltip — must be immediately after the div so Flowbite can attach to it -->
 	<Tooltip arrow={false} type="light" class="z-[19] font-sans font-normal max-w-sm text-center ring-1 ring-black bg-[#7FFFD4]">
-		<div class="text-[10px] font-bold opacity-60 mb-1">{key} · Saheeh International</div>
-		<div class="text-xs leading-snug" dir="ltr">{@html saheehVerseText || `End of ${key}`}</div>
+		<div class="text-[18px] leading-snug" dir="ltr">{@html saheehVerseText || `End of ${key}`}</div>
 		{#if saheehFootnotes.length}
 			<div class="mt-2 pt-2 border-t border-black/20 flex flex-col gap-1" dir="ltr">
 				{#each saheehFootnotes as fn, i}
-					<div class="text-[10px] leading-snug opacity-80"><span class="font-bold mr-1">[{i + 1}]</span>{fn}</div>
+					<div class="text-[15px] leading-snug opacity-80"><span class="font-bold mr-1">[{i + 1}]</span>{fn}</div>
 				{/each}
 			</div>
 		{/if}
