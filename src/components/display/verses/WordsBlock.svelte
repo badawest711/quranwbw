@@ -47,6 +47,7 @@
 	import { fetchAndCacheJson } from '$utils/fetchData';
 	import { morphologyDataUrls, wordsAudioURL, staticEndpoint } from '$data/websiteSettings';
 	import { PUBLIC_TELEGRAM_ENABLED, PUBLIC_WORD_KNOWLEDGE_HIGHLIGHTS_ENABLED, PUBLIC_WORD_RATIO_PROGRESS_BARS_ENABLED, PUBLIC_SHOW_RATIO_PROGRESS_BAR_FOR_NON_ROOT, PUBLIC_SHOW_RATIO_PROGRESS_BACKGROUND } from '$env/static/public';
+	import { marked } from 'marked';
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// CONSTANTS & MAGIC VALUES
@@ -270,6 +271,8 @@
 	let contextMenuDialogText = '';
 	let contextMenuDialogWordKey = null;
 	let contextMenuDialogMode = 'arabic';
+	let aiLoading = false;
+	let aiNotifications = []; // { id, text }
 
 	function openContextMenuDialog(wk, mode) {
 		contextMenuDialogWordKey = wk;
@@ -314,6 +317,45 @@
 		const mode = contextMenuDialogMode;
 		contextMenuDialogOpen = false;
 		screenshotWord(wordKey, caption, mode, true);
+	}
+
+	async function askAI() {
+		if (!contextMenuDialogText.trim() || aiLoading) return;
+		aiLoading = true;
+		const [surah, ayah, wordIdxStr] = contextMenuDialogWordKey ? contextMenuDialogWordKey.split(':') : ['?', '?', '?'];
+		const wordIdx = wordIdxStr ? +wordIdxStr : null;
+		const arabicWord = wordIdx !== null ? (arabicWords[wordIdx - 1] ?? '') : '';
+		const wordTranslation = wordIdx !== null ? (translationWords[wordIdx - 1] ?? '') : '';
+		const ayahArabic = arabicWords.join(' ');
+		const ayahTranslation = translationWords.join(' ');
+		try {
+			const res = await fetch('/api/ask-ai', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					message: contextMenuDialogText,
+					wordKey: contextMenuDialogWordKey,
+					mode: contextMenuDialogMode,
+					surah,
+					ayah,
+					wordIdx: wordIdxStr,
+					arabicWord,
+					wordTranslation,
+					ayahArabic,
+					ayahTranslation
+				})
+			});
+			const data = await res.json();
+			aiNotifications = [...aiNotifications, { id: Date.now(), wordKey: contextMenuDialogWordKey, text: data.reply ?? data.error ?? 'No response' }];
+		} catch (e) {
+			aiNotifications = [...aiNotifications, { id: Date.now(), wordKey: contextMenuDialogWordKey, text: 'Error: ' + e.message }];
+		} finally {
+			aiLoading = false;
+		}
+	}
+
+	function dismissAiNotification(id) {
+		aiNotifications = aiNotifications.filter(n => n.id !== id);
 	}
 
 	// Word selection for multi-word screenshots
@@ -1067,7 +1109,12 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 				placeholder=""
 				on:keydown={(e) => { if (e.key === 'Escape') contextMenuDialogOpen = false; }}
 			></textarea>
-			<div class="flex gap-2 justify-end">
+			<div class="flex gap-2 justify-end flex-wrap">
+				<button
+					class="inline-flex items-center justify-center py-2 px-4 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 rounded-3xl transition-colors duration-150 cursor-pointer text-sm disabled:opacity-50 disabled:cursor-wait mr-auto"
+					on:click={askAI}
+					disabled={aiLoading}
+				>{aiLoading ? '⏳ Asking…' : '✨ Ask AI'}</button>
 				<button
 					class="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 inline-flex items-center justify-center py-2 px-4 rounded-3xl transition-colors duration-150 cursor-pointer text-sm"
 					on:click={() => (contextMenuDialogOpen = false)}
@@ -1082,5 +1129,21 @@ async function screenshotMultipleWords(caption = '', mode = 'arabic', sendToPers
 				>OK</button>
 			</div>
 		</div>
+	</div>
+{/if}
+
+{#if aiNotifications.length > 0}
+	<!-- svelte-ignore a11y-click-events-have-key-events -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div class="fixed bottom-4 right-4 z-[1001] flex flex-col gap-3 pointer-events-none font-sans" style="max-width: 420px; width: calc(100vw - 2rem);">
+		{#each aiNotifications as notif (notif.id)}
+			<div class="pointer-events-auto shadow-2xl rounded-2xl border p-4 {window.theme('bgMain')} {window.theme('border')} {window.theme('text')}">
+				<div class="flex justify-between items-center gap-2 mb-2">
+					<span class="text-xs font-semibold opacity-50">✨ AI Response · {notif.wordKey}</span>
+					<button class="text-xs opacity-40 hover:opacity-100 transition-opacity leading-none cursor-pointer" on:click={() => dismissAiNotification(notif.id)}>✕</button>
+				</div>
+				<div class="text-sm leading-relaxed overflow-y-auto prose prose-sm max-w-none" dir="ltr" style="max-height: 600px; unicode-bidi: plaintext;">{@html marked.parse(notif.text)}</div>
+			</div>
+		{/each}
 	</div>
 {/if}
