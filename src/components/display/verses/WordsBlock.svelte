@@ -401,6 +401,7 @@
 
 	// Saheeh International translation for the ayah icon tooltip
 	let saheehVerseText = '';
+	let saheehFootnotes = []; // array of footnote strings, parallel to [1], [2] markers in text
 
 	// Tooltip enrichment data (root → lemmas, lemma → english word frequencies)
 	let rootLemmasData   = {};
@@ -510,7 +511,11 @@
 		rootLemmasData  = rl;
 		lemmaWordFreqData = lwf;
 		const verseData = saheehAll?.[`${chapter}:${verse}`];
-		saheehVerseText = (typeof verseData === 'string' ? verseData : verseData?.text ?? '').replace(/<[^>]*>/g, '');
+		const rawText = typeof verseData === 'string' ? verseData : (verseData?.text ?? '');
+		saheehVerseText = rawText.replace(/<(?!\/?sup\b)[^>]*>/g, '');
+		saheehFootnotes = Array.isArray(verseData?.footnotes)
+			? verseData.footnotes.map((f) => (f ?? '').replace(/<[^>]*>/g, ''))
+			: [];
 	});
 
 	function formatRoot(wordKey) {
@@ -1246,7 +1251,14 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 	<!-- end icon tooltip — must be immediately after the div so Flowbite can attach to it -->
 	<Tooltip arrow={false} type="light" class="z-[19] font-sans font-normal max-w-sm text-center ring-1 ring-black bg-[#7FFFD4]">
 		<div class="text-[10px] font-bold opacity-60 mb-1">{key} · Saheeh International</div>
-		<div class="text-xs leading-snug">{saheehVerseText || `End of ${key}`}</div>
+		<div class="text-xs leading-snug" dir="ltr">{@html saheehVerseText || `End of ${key}`}</div>
+		{#if saheehFootnotes.length}
+			<div class="mt-2 pt-2 border-t border-black/20 flex flex-col gap-1" dir="ltr">
+				{#each saheehFootnotes as fn, i}
+					<div class="text-[10px] leading-snug opacity-80"><span class="font-bold mr-1">[{i + 1}]</span>{fn}</div>
+				{/each}
+			</div>
+		{/if}
 	</Tooltip>
 	{#if displayIsContinuous && !$__morphologyModalVisible}
 		<VerseOptionsDropdown page={value.meta.page} />
