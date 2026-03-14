@@ -1,4 +1,4 @@
-import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_MAX_TOKENS, ANTHROPIC_TEMPERATURE } from '$env/static/private';
 import { json, error } from '@sveltejs/kit';
 
 export async function POST({ request }) {
@@ -33,8 +33,9 @@ export async function POST({ request }) {
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({
-				model: 'claude-opus-4-6',
-				max_tokens: 1024,
+				model: ANTHROPIC_MODEL || 'claude-opus-4-6',
+				max_tokens: ANTHROPIC_MAX_TOKENS ? parseInt(ANTHROPIC_MAX_TOKENS) : 1024,
+				temperature: ANTHROPIC_TEMPERATURE ? parseFloat(ANTHROPIC_TEMPERATURE) : undefined,
 				system: 'You are a Quran expert assistant. Answer questions about Quranic words, their Arabic grammar, morphology, Tajweed rules, and meanings concisely.',
 				messages: [{ role: 'user', content: fullPrompt }]
 			})
