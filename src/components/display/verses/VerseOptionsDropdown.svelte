@@ -28,7 +28,8 @@
 	const dropdownItemClasses = `flex flex-row items-center space-x-2 font-normal rounded-3xl ${window.theme('hover')}`;
 
 	// Component state
-	let dropdownOpen = false;
+	export let open = false;
+	export let triggeredBy = undefined;
 	let subMenuVisible = false;
 
 	// Computed values
@@ -41,7 +42,7 @@
 	const handleAdvancedPlay = async () => {
 		if (!(await checkOnlineAndAlert())) return;
 		showAudioModal($__verseKey);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	const handleBookmark = () => {
@@ -50,29 +51,29 @@
 
 	const handleNotes = () => {
 		__notesModalVisible.set(true);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	const handleTranslation = () => {
 		__verseTranslationModalVisible.set(true);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	const handleTafsir = () => {
 		__tafsirModalVisible.set(true);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	const handleMorphology = () => {
 		__morphologyKey.set($__verseKey);
 		__morphologyModalVisible.set(true);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	const handleCopy = async () => {
 		if (!(await checkOnlineAndAlert())) return;
 		__copyShareVerseModalVisible.set(true);
-		dropdownOpen = false;
+		open = false;
 	};
 
 	// Track analytics
@@ -161,7 +162,7 @@
 				];
 </script>
 
-<Dropdown bind:open={dropdownOpen} class="px-2 mr-2 my-2 w-max text-left font-sans direction-ltr">
+<Dropdown bind:open {triggeredBy} class="px-2 mr-2 my-2 w-max text-left font-sans direction-ltr">
 	<div class="py-2 px-4 text-xs font-semibold text-left">
 		{term('verse')}
 		{$__verseKey}

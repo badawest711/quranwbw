@@ -1236,7 +1236,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 {#if $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && value.words.line[value.words.line.length - 1] === line)}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker}>
+	<div id="end-icon-{chapter}-{verse}" class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker}>
 		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText} style="color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;">
 			<!-- Everything except Mushaf fonts -->
 			{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
@@ -1260,7 +1260,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 		{/if}
 	</Tooltip>
 	{#if displayIsContinuous && !$__morphologyModalVisible}
-		<VerseOptionsDropdown page={value.meta.page} />
+		<VerseOptionsDropdown page={value.meta.page} triggeredBy="#end-icon-{chapter}-{verse}" />
 	{/if}
 {/if}
 
