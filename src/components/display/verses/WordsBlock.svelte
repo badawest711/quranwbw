@@ -1041,7 +1041,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 		await fetch('/api/telegram-message', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text: `${chapter}:${verse}` })
+			body: JSON.stringify({ text: `${chapter}:${verse} | page: ${value.meta.page}` })
 		});
 	}
 </script>
@@ -1236,7 +1236,7 @@ function buildScreenshotElement(wordKey, includeIndex = false) {
 {#if $__currentPage !== PAGE_MUSHAF || ($__currentPage === PAGE_MUSHAF && value.words.line[value.words.line.length - 1] === line)}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div id="end-icon-{chapter}-{verse}" class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker}>
+	<div id="end-icon-{chapter}-{verse}" class={endIconClasses} on:click={() => wordClickHandler({ key, type: 'end' })} on:contextmenu|preventDefault={sendRecitationMarker} on:mousedown={(e) => { if (e.button === 2) e.preventDefault(); }}>
 		<span class={wordSpanClasses} data-fontSize={fontSizes.arabicText} style="color:black;-webkit-text-stroke:2px white;paint-order:stroke fill;">
 			<!-- Everything except Mushaf fonts -->
 			{#if !MUSHAF_FONT_TYPES.includes($__fontType)}
